@@ -32,3 +32,21 @@ services:
       KAFKA_CLUSTERS_0_ZOOKEEPER: localhost:2181
     depends_on:
       - broker
+
+  spark:
+    image: bitnami/spark:3.5
+    container_name: spark
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "8081:8080"   # Spark UI
+      - "7077:7077"
+
+  spark-worker:
+    image: bitnami/spark:3.5
+    container_name: spark-worker
+    depends_on:
+      - spark
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark:7077   
