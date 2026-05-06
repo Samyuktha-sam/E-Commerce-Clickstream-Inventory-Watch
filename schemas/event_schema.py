@@ -8,5 +8,5 @@ REQUIRED_FIELDS = {
     "category",
     "event_type",
     "price",
-    "timestamp"
-}New-Item streaming\src\metrics.py -ItemType File
+    "timestamp",
+}
