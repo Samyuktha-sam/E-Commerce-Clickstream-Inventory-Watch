@@ -1,31 +1,26 @@
+"""
+Spark Structured Streaming app to process clickstream events from Kafka and detect flash sales.
+"""
+
 import os
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    col,
-    concat,
-    from_json,
-    lit,
-    sum as _sum,
-    to_timestamp,
-    when,
-    window,
-)
+import pyspark.sql.functions as F
 from pyspark.sql.types import StringType, StructField, StructType
 
 
 def main() -> None:
+    """Process clickstream events from Kafka and detect flash sales."""
     kafka_bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "broker:29092")
     kafka_topic = os.getenv("KAFKA_TOPIC", "clickstream-events")
 
     spark = (
         SparkSession.builder.appName("ClickstreamFlashSaleDetector")
         .master("spark://spark-master:7077")
-        # Ensure the Scala version (2.13) and Package version match your environment
         .config(
             "spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1"
         )
-        # Optimization: Shuffle partitions default to 200, which is overkill for a small Docker setup
+        .config("spark.jars.ivy", "/tmp/.ivy2")
         .config("spark.sql.shuffle.partitions", "4")
         .getOrCreate()
     )
@@ -48,45 +43,47 @@ def main() -> None:
         .load()
     )
 
-    events = (
-        raw_stream.select(from_json(col("value").cast("string"), schema).alias("data"))
+    decoded_df = (
+        raw_stream.select(
+            F.from_json(F.col("value").cast("string"), schema).alias("data")
+        )
         .select("data.*")
-        .withColumn("event_time", to_timestamp(col("timestamp")))
-        .filter(col("event_time").isNotNull())
+        .withColumn("event_time", F.to_timestamp(F.col("timestamp").cast("timestamp")))
+        .filter(F.col("event_time").isNotNull())
+        .withWatermark("event_time", "10 minutes")
     )
 
-    aggregated = (
-        events.groupBy(
-            window(col("event_time"), "10 minutes", "1 minute"), col("product_id")
-        )
-        .agg(
-            _sum(when(col("event_type") == "view", 1).otherwise(0)).alias("views"),
-            _sum(when(col("event_type") == "purchase", 1).otherwise(0)).alias(
-                "purchases"
-            ),
-        )
-        .filter((col("views") > 100) & (col("purchases") < 5))
-        .select(
-            col("window.start").alias("window_start"),
-            col("window.end").alias("window_end"),
-            col("product_id"),
-            col("views"),
-            col("purchases"),
-            concat(
-                lit("High Interest, Low Conversion for product "),
-                col("product_id"),
-                lit(" -> suggest Flash Sale / discount"),
-            ).alias("notification"),
-        )
+    windowed_stats = decoded_df.groupBy(
+        F.window(F.col("event_time"), "5 minutes", "1 minute"), F.col("product_id")
+    ).agg(
+        F.count(F.when(F.col("event_type") == "purchase", True)).alias(
+            "purchase_count"
+        ),
+        F.count(F.when(F.col("event_type") == "add_to_cart", True)).alias(
+            "add_to_cart_count"
+        ),
+        F.count(F.when(F.col("event_type") == "view", True)).alias("view_count"),
+    )
+
+    alerts_df = windowed_stats.filter(
+        (F.col("view_count") > 5) & (F.col("purchase_count") < 2)
+    ).select(
+        "window.start",
+        "window.end",
+        "product_id",
+        "view_count",
+        "purchase_count",
+        F.lit("Flash Sale Recommended").alias("action"),
     )
 
     query = (
-        aggregated.writeStream.outputMode("update")
+        alerts_df.writeStream.outputMode("update")
         .format("console")
         .option("truncate", "false")
-        .option("numRows", "50")
         .start()
     )
+
+    print("Streaming started... Waiting for data from Kafka.")
 
     query.awaitTermination()
 
