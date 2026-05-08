@@ -20,7 +20,7 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_NUM_PARTITIONS: 3
       # create a topic named 'clickstream-events' with 3 partitions and replication factor 1
-      KAFKA_CREATE_TOPICS: "clickstream-events:3:1"
+      KAFKA_CREATE_TOPICS: "clickstream-events:3:1" 
 
   # kafka-ui:
   #   image: provectuslabs/kafka-ui:latest
