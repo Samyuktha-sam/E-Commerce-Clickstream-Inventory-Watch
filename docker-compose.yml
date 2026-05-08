@@ -69,7 +69,42 @@ services:
       - spark-network
       - default
 
+  airflow-webserver:
+    image: apache/airflow:2.8.0
+    environment:
+      AIRFLOW_CORE_LOAD_EXAMPLES: 'False'
+      AIRFLOW_CORE_DAGS_FOLDER: '/opt/airflow/dags'
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./airflow_dags:/opt/airflow/dags
+      - ./batch_layer:/opt/airflow/batch_layer
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: clickstream_db
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    ports:
+      - "5432:5432"
+
+  minio:  # S3-compatible object storage
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    # volumes:
+    #   - minio_data:/data
+    command: server /data --console-address ":9001"
+
 volumes:
+  # minio_data:
   spark-data:
 
 networks:
