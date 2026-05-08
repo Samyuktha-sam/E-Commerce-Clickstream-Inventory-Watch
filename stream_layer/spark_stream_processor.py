@@ -1,7 +1,6 @@
 import logging
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 from pyspark.sql import DataFrame, SparkSession
 import pyspark.sql.functions as F
@@ -28,6 +27,7 @@ class AppConfig:
     spark_checkpoint: str = os.getenv(
         "SPARK_CHECKPOINT_PATH", "/tmp/spark-checkpoints/clickstream-app"
     )
+    alerts_topic: str = os.getenv("ALERTS_TOPIC", "alerts-notifications")
 
     # Pre-defined schema for the clickstream
     CLICKSTREAM_SCHEMA: StructType = StructType(
@@ -119,7 +119,21 @@ def main() -> None:
         alerts_df = detect_flash_sales(decoded_df)
 
         # 3. Sinks
-        # Sink A: Console Alerts
+        # Sink A: Publish alerts to Kafka only when the alert condition is met.
+        (
+            alerts_df.selectExpr("to_json(struct(*)) AS value")
+            .writeStream.outputMode("append")
+            .format("kafka")
+            .option("kafka.bootstrap.servers", config.kafka_bootstrap)
+            .option("topic", config.alerts_topic)
+            .option(
+                "checkpointLocation",
+                f"{config.spark_checkpoint}/alerts-notifications",
+            )
+            .trigger(processingTime="30 seconds")
+            .start()
+        )
+
         console_query = (
             alerts_df.writeStream.outputMode("update")
             .format("console")

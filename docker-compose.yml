@@ -19,20 +19,22 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_NUM_PARTITIONS: 3
-      # create a topic named 'clickstream-events' with 3 partitions and replication factor 1
-      KAFKA_CREATE_TOPICS: "clickstream-events:3:1" 
+      # Format: "topic_name:partitions:replicas,topic_name:partitions:replicas"
+      KAFKA_CREATE_TOPICS: "clickstream-events:3:1, alerts-notifications:3:1" 
+    volumes:
+      - kafka_data:/var/lib/kafka/data
 
-  # kafka-ui:
-  #   image: provectuslabs/kafka-ui:latest
-  #   container_name: kafka-ui
-  #   ports:
-  #     - "8084:8080"
-  #   environment:
-  #     KAFKA_CLUSTERS_0_NAME: local
-  #     KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker:9092
-  #     KAFKA_CLUSTERS_0_ZOOKEEPER: localhost:2181
-  #   depends_on:
-  #     - broker
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8084:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: localhost:2181
+    depends_on:
+      - broker
 
   spark-master:
     image: apache/spark:latest
@@ -140,6 +142,7 @@ services:
 
 volumes:
   minio_data:
+  kafka_data:
   spark-data:
 
 networks:
