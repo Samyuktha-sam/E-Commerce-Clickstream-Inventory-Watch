@@ -89,8 +89,8 @@ services:
   airflow-webserver:
     image: apache/airflow:2.8.0
     environment:
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW__CORE__DAGS_FOLDER: "/opt/airflow/dags"
+      AIRFLOW_CORE_LOAD_EXAMPLES: 'False'
+      AIRFLOW_CORE_DAGS_FOLDER: '/opt/airflow/dags'
     ports:
       - "8080:8080"
     volumes:
@@ -108,8 +108,7 @@ services:
     ports:
       - "5432:5432"
 
-  minio:
-    # S3-compatible object storage
+  minio:  # S3-compatible object storage
     image: minio/minio:latest
     ports:
       - "9000:9000"
@@ -117,32 +116,12 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
-    volumes:
-      - minio_data:/data
+    # volumes:
+    #   - minio_data:/data
     command: server /data --console-address ":9001"
 
-  minio-init:
-    image: minio/mc:latest
-    container_name: minio-init
-    depends_on:
-      - minio
-    entrypoint: >
-      /bin/sh -c '
-        until mc --insecure alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin}; do sleep 1; done;
-        mc --insecure mb local/clickstream-lake || true;
-        mc --insecure policy set none local/clickstream-lake || true;
-        echo "MinIO bucket clickstream-lake ensured";
-        '
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    networks:
-      - default
-    restart: "no"
-
 volumes:
-  minio_data:
-  kafka_data:
+  # minio_data:
   spark-data:
 
 networks:
