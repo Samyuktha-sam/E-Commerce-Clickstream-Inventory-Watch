@@ -3,6 +3,7 @@ Clickstream event simulator for generating realistic e-commerce events.
 """
 
 import random
+import uuid
 from datetime import datetime
 from typing import Dict, List
 
@@ -10,7 +11,19 @@ from typing import Dict, List
 class ClickstreamSimulator:
     """Generates simulated clickstream events with configurable parameters."""
 
-    DEFAULT_PRODUCTS = ["P100", "P101", "P102", "P103", "P104"]
+    DEFAULT_PRODUCTS = [
+        "P100",
+        "P101",
+        "P102",
+        "P103",
+        "P104",
+        "P105",
+        "P106",
+        "P107",
+        "P108",
+        "P109",
+        "P110",
+    ]
     DEFAULT_EVENTS = ["view", "add_to_cart", "purchase"]
     DEFAULT_EVENT_WEIGHTS = [70, 20, 10]  # Percentages for view, add_to_cart, purchase
 
@@ -41,12 +54,14 @@ class ClickstreamSimulator:
 
         Returns:
             Dictionary containing event data with keys:
+            - event_id: Unique UUID for the event
             - user_id: Randomly generated user ID
             - product_id: Randomly selected product
             - event_type: Event type based on configured weights
             - timestamp: Current UTC timestamp in ISO format
         """
         event = {
+            "event_id": str(uuid.uuid4()),
             "user_id": random.randint(self.user_id_min, self.user_id_max),
             "product_id": random.choice(self.products),
             "event_type": random.choices(self.events, weights=self.event_weights)[0],

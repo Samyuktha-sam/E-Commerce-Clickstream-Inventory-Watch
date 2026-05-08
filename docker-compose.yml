@@ -48,7 +48,17 @@ services:
     volumes:
       - ./stream_layer/spark_stream_processor.py:/opt/spark/work-dir/spark_stream_processor.py
       - spark-data:/tmp
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "-h", "spark-master", "--port", "7077", "--webui-port", "8080"]
+    command:
+      [
+        "/opt/spark/bin/spark-class",
+        "org.apache.spark.deploy.master.Master",
+        "-h",
+        "spark-master",
+        "--port",
+        "7077",
+        "--webui-port",
+        "8080",
+      ]
     networks:
       - spark-network
       - default
@@ -64,12 +74,72 @@ services:
       - SPARK_MASTER_URL=spark://spark-master:7077
       - HOME=/tmp
       - SPARK_SUBMIT_OPTS=-Divy.home=/tmp/.ivy2 -Divy.cache.dir=/tmp/.ivy2/cache
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    command:
+      [
+        "/opt/spark/bin/spark-class",
+        "org.apache.spark.deploy.worker.Worker",
+        "spark://spark-master:7077",
+      ]
     networks:
       - spark-network
       - default
 
+  airflow-webserver:
+    image: apache/airflow:2.8.0
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__DAGS_FOLDER: "/opt/airflow/dags"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./airflow_dags:/opt/airflow/dags
+      - ./batch_layer:/opt/airflow/batch_layer
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: clickstream_db
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    ports:
+      - "5432:5432"
+
+  minio:
+    # S3-compatible object storage
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c '
+        until mc --insecure alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin}; do sleep 1; done;
+        mc --insecure mb local/clickstream-lake || true;
+        mc --insecure policy set none local/clickstream-lake || true;
+        echo "MinIO bucket clickstream-lake ensured";
+        '
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    networks:
+      - default
+    restart: "no"
+
 volumes:
+  minio_data:
   spark-data:
 
 networks:

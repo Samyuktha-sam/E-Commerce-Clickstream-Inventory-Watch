@@ -79,11 +79,12 @@ class TestClickstreamSimulatorEventGeneration:
         event = simulator.generate_event()
 
         assert isinstance(event, dict)
+        assert "event_id" in event
         assert "user_id" in event
         assert "product_id" in event
         assert "event_type" in event
         assert "timestamp" in event
-        assert len(event) == 4
+        assert len(event) == 5
 
     def test_generate_event_user_id_in_range(self):
         """Test that user_id is within specified range."""
@@ -158,14 +159,23 @@ class TestClickstreamSimulatorEventGeneration:
         event_time = datetime.fromisoformat(event["timestamp"])
         assert before <= event_time <= after
 
+    def test_generate_event_id_unique(self):
+        """Test that each event has a unique event_id."""
+        simulator = ClickstreamSimulator()
+        events = [simulator.generate_event() for _ in range(100)]
+
+        event_ids = [e["event_id"] for e in events]
+        # All event_ids should be unique
+        assert len(set(event_ids)) == len(event_ids)
+
     def test_generate_event_randomness(self):
         """Test that events are not identical (randomness)."""
         simulator = ClickstreamSimulator()
         events = [simulator.generate_event() for _ in range(10)]
 
-        # Events should have different user_ids or different timestamps
-        user_ids = [e["user_id"] for e in events]
-        assert len(set(user_ids)) > 1  # At least some variation
+        # Events should have different event_ids
+        event_ids = [e["event_id"] for e in events]
+        assert len(set(event_ids)) == len(event_ids)  # All unique
 
 
 class TestClickstreamSimulatorBatchGeneration:
@@ -202,6 +212,7 @@ class TestClickstreamSimulatorBatchGeneration:
         batch = simulator.generate_batch(10)
 
         for event in batch:
+            assert "event_id" in event
             assert "user_id" in event
             assert "product_id" in event
             assert "event_type" in event
