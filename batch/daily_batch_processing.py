@@ -1,95 +1,61 @@
-import json
-from collections import defaultdict
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, count, when
 
-EVENT_FILE = "storage/raw/events.jsonl"
+S3_BUCKET = "s3a://ecommerce-clickstream-data"
 
-product_views = defaultdict(int)
+spark = SparkSession.builder \
+    .appName("DailyClickstreamBatchProcessingFromS3") \
+    .getOrCreate()
 
-user_views = defaultdict(int)
-user_purchases = defaultdict(int)
+input_path = f"{S3_BUCKET}/clickstream/raw/events/"
+report_path = f"{S3_BUCKET}/clickstream/reports/daily_batch_report/"
 
-with open(EVENT_FILE, "r", encoding="utf-8") as file:
-    for line in file:
-        event = json.loads(line)
-
-        product_id = event["product_id"]
-        user_id = event["user_id"]
-        event_type = event["event_type"]
-
-        # -----------------------------
-        # Product view aggregation
-        # -----------------------------
-        if event_type == "view":
-            product_views[product_id] += 1
-            user_views[user_id] += 1
-
-        elif event_type == "purchase":
-            user_purchases[user_id] += 1
+df = spark.read.json(input_path)
 
 # ==================================================
 # 1. TOP 5 MOST VIEWED PRODUCTS
 # ==================================================
 
-top_products = sorted(
-    product_views.items(),
-    key=lambda x: x[1],
-    reverse=True
-)[:5]
+top_products = df.filter(col("event_type") == "view") \
+    .groupBy("product_id") \
+    .agg(count("*").alias("view_count")) \
+    .orderBy(col("view_count").desc()) \
+    .limit(5)
 
 print("\n===== TOP 5 MOST VIEWED PRODUCTS =====")
-
-for rank, (product, views) in enumerate(top_products, start=1):
-    print(f"{rank}. {product} -> {views} views")
+top_products.show(truncate=False)
 
 # ==================================================
 # 2. DAILY USER SEGMENTATION
 # ==================================================
 
-buyers = []
-window_shoppers = []
+user_summary = df.groupBy("user_id").agg(
+    count(when(col("event_type") == "view", True)).alias("views"),
+    count(when(col("event_type") == "purchase", True)).alias("purchases")
+)
 
-for user in user_views:
-
-    views = user_views[user]
-    purchases = user_purchases[user]
-
-    # Buyer
-    if purchases > 0:
-        buyers.append(user)
-
-    # Window shopper
-    elif views >= 5 and purchases == 0:
-        window_shoppers.append(user)
+user_segments = user_summary.withColumn(
+    "segment",
+    when(col("purchases") > 0, "Buyer")
+    .when((col("views") >= 5) & (col("purchases") == 0), "Window Shopper")
+    .otherwise("Casual Visitor")
+)
 
 print("\n===== DAILY USER SEGMENTATION =====")
-
-print(f"\nBuyers ({len(buyers)} users)")
-for user in buyers:
-    print(user)
-
-print(f"\nWindow Shoppers ({len(window_shoppers)} users)")
-for user in window_shoppers:
-    print(user)
+user_segments.show(truncate=False)
 
 # ==================================================
-# SAVE REPORT
+# SAVE REPORTS BACK TO S3
 # ==================================================
 
-with open("storage/reports/daily_report.txt", "w", encoding="utf-8") as report:
+top_products.write.mode("overwrite").json(
+    f"{report_path}/top_products"
+)
 
-    report.write("TOP 5 MOST VIEWED PRODUCTS\n")
+user_segments.write.mode("overwrite").json(
+    f"{report_path}/user_segments"
+)
 
-    for rank, (product, views) in enumerate(top_products, start=1):
-        report.write(f"{rank}. {product} -> {views} views\n")
+print("\nDaily Spark batch report generated successfully from S3.")
 
-    report.write("\nDAILY USER SEGMENTATION\n")
-
-    report.write(f"\nBuyers ({len(buyers)} users)\n")
-    for user in buyers:
-        report.write(user + "\n")
-
-    report.write(f"\nWindow Shoppers ({len(window_shoppers)} users)\n")
-    for user in window_shoppers:
-        report.write(user + "\n")
-
-print("\nDaily batch report generated")
+spark.stop()
