@@ -1,12 +1,14 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, count, when
 
+S3_BUCKET = "s3a://ecommerce-clickstream-data"
+
 spark = SparkSession.builder \
-    .appName("DailyClickstreamBatchProcessing") \
+    .appName("DailyClickstreamBatchProcessingFromS3") \
     .getOrCreate()
 
-input_path = "storage/raw/events.jsonl"
-report_path = "storage/reports/daily_batch_report"
+input_path = f"{S3_BUCKET}/clickstream/raw/events/"
+report_path = f"{S3_BUCKET}/clickstream/reports/daily_batch_report/"
 
 df = spark.read.json(input_path)
 
@@ -31,6 +33,6 @@ user_segments = user_summary.withColumn(
 top_products.write.mode("overwrite").json(f"{report_path}/top_products")
 user_segments.write.mode("overwrite").json(f"{report_path}/user_segments")
 
-print("Daily Spark batch processing completed successfully.")
+print("Daily Spark batch processing from S3 completed")
 
 spark.stop()
