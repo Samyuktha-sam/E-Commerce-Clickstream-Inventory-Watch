@@ -62,6 +62,7 @@ htmlcov/
 # Logs
 *.log
 logs/
+*/logs/
 
 # Local development
 .local/
