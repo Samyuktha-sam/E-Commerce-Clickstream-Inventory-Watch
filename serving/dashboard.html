@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clickstream Analytics — BI Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #1a1d27;
+    --bg3: #22263a;
+    --border: rgba(255,255,255,0.08);
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --accent: #6366f1;
+    --accent2: #22d3ee;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --coral: #f97316;
+    --radius: 12px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ---- Header ---- */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .header-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-weight: 500;
+  }
+  .badge-live { background: rgba(16,185,129,0.15); color: var(--green); }
+  .badge-batch { background: rgba(99,102,241,0.15); color: var(--accent); }
+  .header-meta { color: var(--text2); font-size: 12px; }
+  #last-updated { display: inline; }
+
+  /* ---- Layout ---- */
+  main { padding: 24px 28px; max-width: 1400px; margin: 0 auto; }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text2);
+    margin: 28px 0 12px;
+  }
+  .section-label:first-child { margin-top: 0; }
+
+  /* ---- KPI cards ---- */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+  }
+  .kpi-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+  }
+  .kpi-label { font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+  .kpi-value { font-size: 28px; font-weight: 700; letter-spacing: -0.03em; }
+  .kpi-sub { font-size: 11px; color: var(--text2); margin-top: 4px; }
+  .kpi-value.green { color: var(--green); }
+  .kpi-value.accent { color: var(--accent2); }
+  .kpi-value.amber  { color: var(--amber); }
+  .kpi-value.coral  { color: var(--coral); }
+
+  /* ---- Chart panels ---- */
+  .chart-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .chart-grid.three { grid-template-columns: 2fr 1fr; }
+  .chart-panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .chart-panel.full { grid-column: 1 / -1; }
+  .panel-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel-title .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dot-live  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot-batch { background: var(--accent); }
+
+  canvas { max-height: 240px; }
+
+  /* ---- Alerts table ---- */
+  .alerts-table-wrap {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .alerts-table-header {
+    padding: 16px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    padding: 10px 16px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: var(--text2);
+    text-align: left;
+    background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid var(--border);
+  }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: rgba(255,255,255,0.03); }
+  tbody td { padding: 10px 16px; font-size: 13px; }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .tag-alert { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .tag-high  { background: rgba(239,68,68,0.12);  color: var(--red); }
+
+  /* ---- Empty / loading states ---- */
+  .empty { color: var(--text2); font-size: 13px; padding: 28px; text-align: center; }
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- Product bar list ---- */
+  .product-list { display: flex; flex-direction: column; gap: 10px; }
+  .product-row  { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .product-row .pid { width: 48px; color: var(--text2); font-size: 12px; }
+  .bar-track { flex: 1; background: rgba(255,255,255,0.06); border-radius: 4px; height: 8px; overflow: hidden; }
+  .bar-fill  { height: 100%; border-radius: 4px; background: var(--accent2); transition: width .6s ease; }
+  .product-row .count { min-width: 40px; text-align: right; color: var(--text2); font-size: 12px; }
+
+  /* ---- Funnel ---- */
+  .funnel-list { display: flex; flex-direction: column; gap: 12px; }
+  .funnel-row { display: flex; flex-direction: column; gap: 4px; }
+  .funnel-top { display: flex; justify-content: space-between; font-size: 13px; }
+  .funnel-pct { color: var(--text2); font-size: 12px; }
+  .funnel-bar-fill { height: 10px; border-radius: 4px; transition: width .6s ease; }
+
+  @media (max-width: 900px) {
+    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .chart-grid, .chart-grid.three { grid-template-columns: 1fr; }
+    .chart-panel.full { grid-column: auto; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-title">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    E-Commerce Clickstream Analytics
+    <span class="badge badge-live">Live</span>
+    <span class="badge badge-batch">Batch</span>
+  </div>
+  <div class="header-meta">
+    Last updated: <span id="last-updated">—</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- KPI row -->
+  <div class="section-label">Last 60 minutes — real-time</div>
+  <div class="kpi-grid" id="kpi-grid">
+    <div class="kpi-card"><div class="kpi-label">Active users</div><div class="kpi-value accent" id="kpi-users"><span class="spinner"></span></div><div class="kpi-sub">unique user_ids</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total views</div><div class="kpi-value green"  id="kpi-views"><span class="spinner"></span></div><div class="kpi-sub">product page views</div></div>
+    <div class="kpi-card"><div class="kpi-label">Purchases</div><div class="kpi-value amber" id="kpi-purchases"><span class="spinner"></span></div><div class="kpi-sub">completed orders</div></div>
+    <div class="kpi-card"><div class="kpi-label">Active products</div><div class="kpi-value coral" id="kpi-products"><span class="spinner"></span></div><div class="kpi-sub">products with events</div></div>
+  </div>
+
+  <!-- Row 2: timeline + top products -->
+  <div class="section-label">Real-time trends</div>
+  <div class="chart-grid three">
+    <div class="chart-panel">
+      <div class="panel-title"><span class="dot dot-live"></span>Events per hour (last 24 h)</div>
+      <canvas id="timeline-chart"></canvas>
+    </div>
+    <div class="chart-panel">
+      <div class="panel-title"><span class="dot dot-live"></span>Top products — last hour</div>
+      <div class="product-list" id="product-list"><div class="empty"><span class="spinner"></span> Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- Row 3: funnel + user segments -->
+  <div class="section-label">Conversion &amp; segmentation</div>
+  <div class="chart-grid">
+    <div class="chart-panel">
+      <div class="panel-title"><span class="dot dot-live"></span>Conversion funnel (last 24 h)</div>
+      <div class="funnel-list" id="funnel-list"><div class="empty"><span class="spinner"></span> Loading...</div></div>
+    </div>
+    <div class="chart-panel">
+      <div class="panel-title"><span class="dot dot-batch"></span>User segments — today (batch)</div>
+      <canvas id="segments-chart"></canvas>
+    </div>
+  </div>
+
+  <!-- Row 4: alerts table -->
+  <div class="section-label">Flash sale alerts — last 6 hours</div>
+  <div class="alerts-table-wrap">
+    <div class="alerts-table-header">
+      <span class="dot dot-live" style="width:8px;height:8px"></span>
+      Flash sale candidates
+      <span id="alert-count" style="font-weight:400;color:var(--text2);font-size:12px"></span>
+    </div>
+    <div id="alerts-container">
+      <div class="empty"><span class="spinner"></span> Loading alerts...</div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ---------------------------------------------------------------------------
+// Config — point to the FastAPI serving layer
+// ---------------------------------------------------------------------------
+const API = (window.DASHBOARD_API_BASE || 'http://localhost:8000') + '/api';
+const REFRESH_MS = 30_000;
+
+// Chart.js defaults
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = 'rgba(255,255,255,0.07)';
+Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+Chart.defaults.font.size = 12;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+async function apiFetch(path) {
+  try {
+    const res = await fetch(API + path);
+    if (!res.ok) throw new Error(res.status);
+    return await res.json();
+  } catch (e) {
+    console.warn('API fetch failed:', path, e);
+    return null;
+  }
+}
+
+function fmt(n) {
+  if (n == null) return '—';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
+  return String(n);
+}
+
+// ---------------------------------------------------------------------------
+// KPI cards
+// ---------------------------------------------------------------------------
+async function loadKPIs() {
+  const d = await apiFetch('/stats-summary');
+  if (!d) return;
+  document.getElementById('kpi-users').textContent     = fmt(d.active_users);
+  document.getElementById('kpi-views').textContent     = fmt(d.total_views);
+  document.getElementById('kpi-purchases').textContent = fmt(d.total_purchases);
+  document.getElementById('kpi-products').textContent  = fmt(d.active_products);
+}
+
+// ---------------------------------------------------------------------------
+// Timeline chart
+// ---------------------------------------------------------------------------
+let timelineChart = null;
+async function loadTimeline() {
+  const data = await apiFetch('/events-timeline?hours=24');
+  if (!data || !data.length) return;
+
+  const labels  = data.map(r => r.hour_label);
+  const views    = data.map(r => r.views     || 0);
+  const purchases = data.map(r => r.purchases || 0);
+
+  const cfg = {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Views',
+          data: views,
+          borderColor: '#22d3ee',
+          backgroundColor: 'rgba(34,211,238,0.08)',
+          borderWidth: 1.5,
+          tension: 0.4,
+          fill: true,
+          pointRadius: 0,
+        },
+        {
+          label: 'Purchases',
+          data: purchases,
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16,185,129,0.08)',
+          borderWidth: 1.5,
+          tension: 0.4,
+          fill: true,
+          pointRadius: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: { legend: { position: 'top', labels: { boxWidth: 10, padding: 14 } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
+        y: { grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true },
+      },
+    },
+  };
+
+  const ctx = document.getElementById('timeline-chart').getContext('2d');
+  if (timelineChart) { timelineChart.data = cfg.data; timelineChart.update(); }
+  else timelineChart = new Chart(ctx, cfg);
+}
+
+// ---------------------------------------------------------------------------
+// Top products bar list
+// ---------------------------------------------------------------------------
+async function loadTopProducts() {
+  const data = await apiFetch('/top-products?hours=1&limit=8');
+  const el   = document.getElementById('product-list');
+  if (!data || !data.length) { el.innerHTML = '<div class="empty">No data yet</div>'; return; }
+
+  const max = Math.max(...data.map(r => r.view_count || 0)) || 1;
+  el.innerHTML = data.map(r => `
+    <div class="product-row">
+      <span class="pid">${r.product_id}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round((r.view_count / max) * 100)}%"></div></div>
+      <span class="count">${fmt(r.view_count)}</span>
+    </div>`).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Funnel
+// ---------------------------------------------------------------------------
+const FUNNEL_COLORS = { view: '#22d3ee', add_to_cart: '#f59e0b', purchase: '#10b981' };
+async function loadFunnel() {
+  const data = await apiFetch('/funnel?hours=24');
+  const el   = document.getElementById('funnel-list');
+  if (!data || !data.length) { el.innerHTML = '<div class="empty">No data yet</div>'; return; }
+
+  const max = Math.max(...data.map(r => r.total)) || 1;
+  el.innerHTML = data.map(r => {
+    const pct = Math.round((r.total / max) * 100);
+    const color = FUNNEL_COLORS[r.event_type] || '#6366f1';
+    return `
+    <div class="funnel-row">
+      <div class="funnel-top">
+        <span>${r.event_type.replace(/_/g,' ')}</span>
+        <span>${fmt(r.total)} <span class="funnel-pct">(${pct}%)</span></span>
+      </div>
+      <div class="bar-track" style="height:10px">
+        <div class="funnel-bar-fill" style="width:${pct}%;background:${color}"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ---------------------------------------------------------------------------
+// User segments doughnut
+// ---------------------------------------------------------------------------
+let segChart = null;
+async function loadSegments() {
+  const data = await apiFetch('/user-segments');
+  if (!data || !data.length) return;
+
+  const labels = data.map(r => r.segment);
+  const counts = data.map(r => r.user_count);
+  const colors = ['#6366f1','#22d3ee','#10b981','#f59e0b','#ef4444'];
+
+  const cfg = {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: counts, backgroundColor: colors.slice(0, labels.length), borderWidth: 0 }] },
+    options: {
+      responsive: true,
+      cutout: '65%',
+      plugins: {
+        legend: { position: 'right', labels: { boxWidth: 10, padding: 14 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmt(ctx.raw)}` } },
+      },
+    },
+  };
+
+  const ctx = document.getElementById('segments-chart').getContext('2d');
+  if (segChart) { segChart.data = cfg.data; segChart.update(); }
+  else segChart = new Chart(ctx, cfg);
+}
+
+// ---------------------------------------------------------------------------
+// Alerts table
+// ---------------------------------------------------------------------------
+async function loadAlerts() {
+  const data = await apiFetch('/alerts?hours=6&limit=50');
+  const el   = document.getElementById('alerts-container');
+  const cnt  = document.getElementById('alert-count');
+
+  if (!data || !data.length) {
+    el.innerHTML = '<div class="empty">No flash sale alerts in the last 6 hours</div>';
+    cnt.textContent = '';
+    return;
+  }
+
+  cnt.textContent = `— ${data.length} alert${data.length > 1 ? 's' : ''}`;
+
+  const rows = data.map(r => {
+    const highViews = r.view_count > 20;
+    return `
+    <tr>
+      <td>${r.window_start}</td>
+      <td>${r.window_end}</td>
+      <td><strong>${r.product_id}</strong></td>
+      <td>${highViews ? `<span class="tag tag-high">${r.view_count}</span>` : r.view_count}</td>
+      <td>${r.purchase_count}</td>
+      <td><span class="tag tag-alert">${r.action}</span></td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Window start</th><th>Window end</th><th>Product</th>
+        <th>Views</th><th>Purchases</th><th>Action</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ---------------------------------------------------------------------------
+// Refresh loop
+// ---------------------------------------------------------------------------
+function updateTimestamp() {
+  document.getElementById('last-updated').textContent =
+    new Date().toLocaleTimeString();
+}
+
+async function refreshAll() {
+  await Promise.all([
+    loadKPIs(),
+    loadTimeline(),
+    loadTopProducts(),
+    loadFunnel(),
+    loadSegments(),
+    loadAlerts(),
+  ]);
+  updateTimestamp();
+}
+
+// Initial load then schedule
+refreshAll();
+setInterval(refreshAll, REFRESH_MS);
+</script>
+</body>
+</html>

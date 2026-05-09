@@ -18,4 +18,3 @@ consumer = KafkaConsumer(
 print("Consuming events from Kafka topic 'clickstream-events'...")
 for message in consumer:
     print(f"Received event: {message.value}")
-    
