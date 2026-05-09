@@ -11,6 +11,8 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+logging.getLogger("pyspark").setLevel(logging.WARN)
+logging.getLogger("py4j").setLevel(logging.WARN)
 
 
 @dataclass(frozen=True)
@@ -120,7 +122,7 @@ def main() -> None:
 
         # 3. Sinks
         # Sink A: Publish alerts to Kafka only when the alert condition is met.
-        (
+        alerts_query = (
             alerts_df.selectExpr("to_json(struct(*)) AS value")
             .writeStream.outputMode("append")
             .format("kafka")
@@ -134,13 +136,13 @@ def main() -> None:
             .start()
         )
 
-        console_query = (
-            alerts_df.writeStream.outputMode("update")
-            .format("console")
-            .option("truncate", "false")
-            .trigger(processingTime="30 seconds")
-            .start()
-        )
+        # console_query = (
+        #     alerts_df.writeStream.outputMode("update")
+        #     .format("console")
+        #     .option("truncate", "false")
+        #     .trigger(processingTime="30 seconds")
+        #     .start()
+        # )
 
         # Sink B: Parquet Data Lake
         lake_query = (
