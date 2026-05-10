@@ -263,7 +263,10 @@ services:
       - airflow-net
 
   airflow-init:
-    image: apache/airflow:2.8.3
+    # image: apache/airflow:2.8.3
+    build:
+        context: .
+        dockerfile: Dockerfile.airflow
     container_name: airflow-init
     depends_on:
       - postgres
@@ -283,7 +286,10 @@ services:
     restart: "no"
 
   airflow-webserver:
-    image: apache/airflow:2.8.3
+    # image: apache/airflow:2.8.3
+    build:
+        context: .
+        dockerfile: Dockerfile.airflow
     container_name: airflow-webserver
     depends_on:
       - airflow-init
@@ -308,7 +314,10 @@ services:
     restart: always
 
   airflow-scheduler:
-    image: apache/airflow:2.8.3
+    # image: apache/airflow:2.8.3
+    build:
+        context: .
+        dockerfile: Dockerfile.airflow
     container_name: airflow-scheduler
     depends_on:
       - airflow-init
