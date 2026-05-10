@@ -119,7 +119,15 @@ def main():
             # "org.apache.hadoop:hadoop-aws:3.4.2 "
             "/opt/spark/work-dir/spark_stream_processor.py"
         )
-
+#     """
+#     docker compose exec spark-master /opt/spark/bin/spark-submit \
+#   --master spark://spark-master:7077 \
+#   --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,org.apache.hadoop:hadoop-aws:3.4.2 \
+#   --conf spark.sql.streaming.metricsEnabled=false \
+#   --conf spark.sql.streaming.ui.enabled=false \
+#   --conf spark.ui.showConsoleProgress=false \
+#   /opt/spark/work-dir/spark_raw_sink.py
+#     """
         success = run_command(
             spark_cmd,
             shell=True,
