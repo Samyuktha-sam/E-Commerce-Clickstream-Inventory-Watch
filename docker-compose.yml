@@ -25,23 +25,22 @@ services:
     networks:
       - default
       - kafka-network
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092
-            --list || exit 1",
-        ]
-      interval: 5s
-      timeout: 10s
-      retries: 5
+    # healthcheck:
+    #   test:
+    #     [
+    #       "CMD-SHELL",
+    #       "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092
+    #         --list || exit 1",
+    #     ]
+    #   interval: 5s
+    #   timeout: 10s
+    #   retries: 5
 
   kafka-init:
     image: apache/kafka:latest
     container_name: kafka-init
     depends_on:
-      broker:
-        condition: service_healthy
+      - broker
     environment:
       KAFKA_BOOTSTRAP_SERVERS: broker:29092
     entrypoint: >
@@ -230,19 +229,19 @@ services:
     networks:
       - default
     restart: "no"
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mc --insecure alias set local http://minio:9000
-            ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin}
-            >/dev/null 2>&1 && mc --insecure ls local/clickstream-lake
-            >/dev/null 2>&1 || exit 1",
-        ]
-      interval: 15s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    # healthcheck:
+    #   test:
+    #     [
+    #       "CMD-SHELL",
+    #       "mc --insecure alias set local http://minio:9000
+    #         ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin}
+    #         >/dev/null 2>&1 && mc --insecure ls local/clickstream-lake
+    #         >/dev/null 2>&1 || exit 1",
+    #     ]
+    #   interval: 15s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 10s
 
   postgres:
     image: postgres:13

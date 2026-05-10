@@ -1,8 +1,11 @@
 import logging
 import os
 from dataclasses import dataclass
+
+from py4j.protocol import Py4JJavaError
 from pyspark.sql import DataFrame, SparkSession
 import pyspark.sql.functions as F
+from pyspark.sql.streaming import StreamingQueryException
 from pyspark.sql.types import StringType, StructField, StructType
 
 logging.basicConfig(
@@ -42,8 +45,29 @@ def get_spark_session(config: AppConfig) -> SparkSession:
         .config(
             "spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1"
         )
-        .config("spark.sql.shuffle.partitions", "4")  # Optimized for stateful windowing
+        # 1. State Store Optimization (CRITICAL for Flash Sales)
+        # Replaces default In-Memory store with RocksDB.
+        # Better for large stateful windows and prevents OOM during spikes.
+        .config(
+            "spark.sql.streaming.stateStore.providerClass",
+            "org.apache.spark.sql.execution.streaming.state.RocksDBStateStoreProvider",
+        )
+        # 2. Shuffle & Task Tuning
+        # Since we are using 2 cores per executor, 4 partitions is a good "sweet spot."
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.default.parallelism", "4")
+        # 3. Suppress Adaptive Query Execution (AQE) Warnings
+        # As seen in your previous logs, AQE isn't supported in Streaming. Let's turn it off.
+        .config("spark.sql.adaptive.enabled", "false")
+        # 4. Metadata & Checkpoint Cleanup
+        # Prevents the checkpoint directory from growing indefinitely by limiting history.
+        .config("spark.sql.streaming.minBatchesToRetain", "20")
+        # 5. Reliability & Performance
         .config("spark.streaming.stopGracefullyOnShutdown", "true")
+        .config(
+            "spark.sql.streaming.checkpointFileManager.class",
+            "org.apache.spark.sql.execution.streaming.FileContextBasedCheckpointFileManager",
+        )
         .getOrCreate()
     )
 
@@ -90,6 +114,7 @@ def main() -> None:
             .option("kafka.bootstrap.servers", config.kafka_bootstrap)
             .option("subscribe", config.kafka_topic)
             .option("startingOffsets", "latest")
+            .option("failOnDataLoss", "false")
             .load()
         )
 
@@ -104,7 +129,7 @@ def main() -> None:
             .option("kafka.bootstrap.servers", config.kafka_bootstrap)
             .option("topic", config.alerts_topic)
             .option("checkpointLocation", f"{config.spark_checkpoint}/checkpoints")
-            # .trigger(processingTime="30 seconds")
+            .trigger(processingTime="30 seconds")
             .start()
         )
 
@@ -112,7 +137,7 @@ def main() -> None:
             "Flash Sale Detector started. Listening for high-view/low-purchase patterns."
         )
         query.awaitTermination()
-    except Exception as e:
+    except (Py4JJavaError, StreamingQueryException) as e:
         logger.error("Flash Sale Detector failed: %s", str(e))
     finally:
         spark.stop()
