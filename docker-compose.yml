@@ -23,7 +23,7 @@ services:
     volumes:
       - kafka_data:/var/lib/kafka/data
     networks:
-      - default
+      - default-net
       - kafka-network
     # healthcheck:
     #   test:
@@ -93,7 +93,7 @@ services:
 
   #   networks:
   #     - kafka-network
-  #     - default
+  #     - default-net
 
   kafka-ui:
     image: kafbat/kafka-ui:main
@@ -110,6 +110,9 @@ services:
 
   spark-master:
     image: apache/spark:4.1.1
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.spark
     container_name: spark-master
     environment:
       - SPARK_MODE=master
@@ -121,6 +124,7 @@ services:
       - "8085:8080"
       - "7077:7077"
       - "4040:4040"
+      - "8888:8888"
     volumes:
       - ./cache/ivy:/opt/spark/.ivy2
       - ./stream_layer:/opt/spark/work-dir
@@ -149,14 +153,18 @@ services:
         "7077",
         "--webui-port",
         "8080",
+        
       ]
     networks:
       - spark-network
-      - default
+      - default-net
     restart: always
 
   spark-worker:
     image: apache/spark:4.1.1
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.spark
     container_name: spark-worker
     depends_on:
       - spark-master
@@ -177,7 +185,7 @@ services:
       ]
     networks:
       - spark-network
-      - default
+      - default-net
     # healthcheck:
     #   test:
     #     [
@@ -200,7 +208,7 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     healthcheck:
-      test: [ "CMD", "mc", "-ready", "local" ]
+      test: ["CMD", "mc", "-ready", "local"]
       interval: 10s
       retries: 5
       start_period: 10s
@@ -209,7 +217,7 @@ services:
       - minio_data:/data
     command: server /data --console-address ":9001"
     networks:
-      - default
+      - default-net
 
   minio-init:
     image: minio/mc:latest
@@ -227,7 +235,7 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     networks:
-      - default
+      - default-net
     restart: "no"
     # healthcheck:
     #   test:
@@ -261,12 +269,13 @@ services:
       retries: 5
     networks:
       - airflow-net
+      - default-net
 
   airflow-init:
     # image: apache/airflow:2.8.3
     build:
-        context: .
-        dockerfile: Dockerfile.airflow
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: airflow-init
     depends_on:
       - postgres
@@ -283,13 +292,14 @@ services:
     command: -c "airflow db migrate && airflow users create --username admin --password admin --role Admin --firstname Admin --lastname User --email admin@example.com"
     networks:
       - airflow-net
+      - default-net
     restart: "no"
 
   airflow-webserver:
     # image: apache/airflow:2.8.3
     build:
-        context: .
-        dockerfile: Dockerfile.airflow
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: airflow-webserver
     depends_on:
       - airflow-init
@@ -303,7 +313,7 @@ services:
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW_UID: "50000"
-      _PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-apache-spark"
+      # _PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-apache-spark"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
@@ -311,13 +321,14 @@ services:
     command: webserver
     networks:
       - airflow-net
+      - default-net
     restart: always
 
   airflow-scheduler:
     # image: apache/airflow:2.8.3
     build:
-        context: .
-        dockerfile: Dockerfile.airflow
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: airflow-scheduler
     depends_on:
       - airflow-init
@@ -335,6 +346,7 @@ services:
     command: scheduler
     networks:
       - airflow-net
+      - default-net
     restart: always
 
 volumes:
@@ -346,7 +358,7 @@ volumes:
 networks:
   spark-network:
     driver: bridge
-  default:
+  default-net:
     driver: bridge
   kafka-network:
     driver: bridge

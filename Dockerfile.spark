@@ -1,0 +1,48 @@
+FROM apache/spark:4.1.1-scala2.13-java17-python3-ubuntu
+
+USER root
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl wget netcat-traditional \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python packages (including JupyterLab)
+RUN pip3 install --no-cache-dir --upgrade pip && \
+    pip3 install --no-cache-dir \
+    jupyterlab \
+    notebook \
+    kafka-python \
+    minio \
+    delta-spark \
+    pandas \
+    numpy \
+    matplotlib \
+    seaborn \
+    pyarrow
+
+# Create extra jars directory
+RUN mkdir -p /opt/spark/jars/extra
+
+# Download necessary JARs for Kafka + MinIO
+WORKDIR /opt/spark/jars/extra
+
+# Spark Kafka connector (match Spark 4.1.1)
+RUN wget -q https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_2.13/4.1.1/spark-sql-kafka-0-10_2.13-4.1.1.jar
+
+# Hadoop AWS + AWS SDK for MinIO (S3 compatibility)
+RUN wget -q https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.4.0/hadoop-aws-3.4.0.jar && \
+    wget -q https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.777/aws-java-sdk-bundle-1.12.777.jar
+
+# Optional: Delta Lake JARs (if not using delta-spark package only)
+RUN wget -q https://repo1.maven.org/maven2/io/delta/delta-spark_2.13/3.2.0/delta-spark_2.13-3.2.0.jar
+
+USER spark
+WORKDIR /home/spark
+
+# Expose ports
+EXPOSE 8888 4040 8080
+
+# Default command (will be overridden in docker-compose)
+CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]

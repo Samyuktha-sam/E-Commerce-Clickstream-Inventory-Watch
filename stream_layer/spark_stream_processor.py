@@ -91,8 +91,9 @@ def detect_flash_sales(df: DataFrame) -> DataFrame:
         F.count(F.when(F.col("event_type") == "view", 1)).alias("view_count"),
     )
 
+    # Lower thresholds for testing: view_count >= 2 AND purchase_count < 1
     return windowed_stats.filter(
-        (F.col("view_count") > 5) & (F.col("purchase_count") < 2)
+        (F.col("view_count") >= 2) & (F.col("purchase_count") < 1)
     ).select(
         "window.start",
         "window.end",
@@ -113,13 +114,26 @@ def main() -> None:
             spark.readStream.format("kafka")
             .option("kafka.bootstrap.servers", config.kafka_bootstrap)
             .option("subscribe", config.kafka_topic)
-            .option("startingOffsets", "latest")
+            .option("startingOffsets", "earliest")
             .option("failOnDataLoss", "false")
             .load()
         )
 
         decoded_df = transform_raw_stream(raw_stream, config.CLICKSTREAM_SCHEMA)
+        logger.info(f"✓ Connected to Kafka topic: {config.kafka_topic}")
+
         alerts_df = detect_flash_sales(decoded_df)
+        logger.info(f"✓ Flash sale detection configured")
+
+        # Console sink for debugging
+        console_query = (
+            alerts_df.writeStream.outputMode("append")
+            .format("console")
+            .option("truncate", "false")
+            .trigger(processingTime="30 seconds")
+            .start()
+        )
+        logger.info(f"✓ Console sink started for debugging")
 
         # Sink: Publish alerts back to Kafka for downstream microservices
         query = (
@@ -132,9 +146,15 @@ def main() -> None:
             .trigger(processingTime="30 seconds")
             .start()
         )
+        logger.info(
+            f"✓ Kafka sink started - publishing to topic: {config.alerts_topic}"
+        )
 
         logger.info(
             "Flash Sale Detector started. Listening for high-view/low-purchase patterns."
+        )
+        logger.info(
+            "Waiting for incoming events... (both console and Kafka sinks are active)"
         )
         query.awaitTermination()
     except (Py4JJavaError, StreamingQueryException) as e:
