@@ -271,6 +271,7 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: "04VgFYBDheYCEGguaknpjvmRVCzrSk2fN7hbrYEEkgc="
+      _PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-apache-spark"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
@@ -296,6 +297,7 @@ services:
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW_UID: "50000"
+      _PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-apache-spark"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs

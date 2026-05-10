@@ -101,7 +101,7 @@ def main() -> None:
             )
             .outputMode("append")
             .partitionBy("event_date")
-            # .trigger(processingTime="60 seconds") # Longer trigger = larger, more efficient Parquet files
+            .trigger(processingTime="60 seconds") # Longer trigger = larger, more efficient Parquet files
             .start()
         )
 
