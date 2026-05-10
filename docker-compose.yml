@@ -1,3 +1,17 @@
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.8.3
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+    AIRFLOW__CORE__FERNET_KEY: "04VgFYBDheYCEGguaknpjvmRVCzrSk2fN7hbrYEEkgc="
+    _PIP_ADDITIONAL_DEPENDENCIES: "apache-airflow-providers-apache-spark"
+  volumes: &airflow-common-volumes
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+  networks: &airflow-common-networks
+    - airflow-net
+
 services:
   broker:
     image: apache/kafka:latest
@@ -29,7 +43,8 @@ services:
       test:
         [
           "CMD-SHELL",
-          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1",
+          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092
+            --list || exit 1",
         ]
       interval: 5s
       timeout: 10s
@@ -52,6 +67,49 @@ services:
       - kafka-network
     restart: "no"
 
+  # kafka-connect:
+  #   image: confluentinc/cp-kafka-connect:7.6.1
+  #   container_name: kafka-connect
+
+  #   depends_on:
+  #     - broker
+
+  #   ports:
+  #     - "8083:8083"
+
+  #   environment:
+  #     CONNECT_BOOTSTRAP_SERVERS: broker:29092
+  #     CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+  #     CONNECT_REST_PORT: 8083
+
+  #     CONNECT_GROUP_ID: connect-cluster
+
+  #     CONNECT_CONFIG_STORAGE_TOPIC: connect-configs
+  #     CONNECT_OFFSET_STORAGE_TOPIC: connect-offsets
+  #     CONNECT_STATUS_STORAGE_TOPIC: connect-status
+
+  #     CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+  #     CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+  #     CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+
+  #     CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+
+  #     CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+  #     CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+
+  #     CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
+
+  #   command:
+  #     - bash
+  #     - -c
+  #     - |
+  #       confluent-hub install --no-prompt confluentinc/kafka-connect-s3:10.5.13
+  #       /etc/confluent/docker/run
+
+  #   networks:
+  #     - kafka-network
+  #     - default
+
   kafka-ui:
     image: kafbat/kafka-ui:main
     ports:
@@ -66,18 +124,25 @@ services:
       - kafka-network
 
   spark-master:
-    image: apache/spark:latest
+    image: apache/spark:4.1.1
     container_name: spark-master
     environment:
       - SPARK_MODE=master
       - SPARK_MASTER_HOST=spark-master
       - HOME=/tmp
-      - SPARK_SUBMIT_OPTS=-Divy.home=/tmp/.ivy2 -Divy.cache.dir=/tmp/.ivy2/cache
+      - SPARK_SUBMIT_OPTS=-Divy.home=/opt/spark/.ivy2
+        -Divy.cache.dir=/opt/spark/.ivy2/cache
     ports:
       - "8085:8080"
       - "7077:7077"
+      - "4040:4040"
     volumes:
+      - ./cache/ivy:/opt/spark/.ivy2
+      - ./stream_layer:/opt/spark/work-dir
+      - ./cache/checkpoints:/opt/spark/checkpoints
       - ./stream_layer/spark_stream_processor.py:/opt/spark/work-dir/spark_stream_processor.py
+      - ./stream_layer/test.py:/opt/spark/work-dir/test.py
+      - ./stream_layer/spark_raw_sink.py:/opt/spark/work-dir/spark_raw_sink.py
       - spark-data:/tmp
     healthcheck:
       test:
@@ -106,7 +171,7 @@ services:
     restart: always
 
   spark-worker:
-    image: apache/spark:latest
+    image: apache/spark:4.1.1
     container_name: spark-worker
     depends_on:
       - spark-master
@@ -114,7 +179,11 @@ services:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
       - HOME=/tmp
-      - SPARK_SUBMIT_OPTS=-Divy.home=/tmp/.ivy2 -Divy.cache.dir=/tmp/.ivy2/cache
+      - SPARK_SUBMIT_OPTS=-Divy.home=/opt/spark/.ivy2
+        -Divy.cache.dir=/opt/spark/.ivy2/cache
+    volumes:
+      - ./cache/ivy:/opt/spark/.ivy2
+      - ./cache/checkpoints:/opt/spark/checkpoints
     command:
       [
         "/opt/spark/bin/spark-class",
@@ -154,6 +223,8 @@ services:
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
+    networks:
+      - default
 
   minio-init:
     image: minio/mc:latest
@@ -186,89 +257,71 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+  # postgres:
+  #   image: postgres:13
+  #   container_name: postgres
+  #   environment:
+  #     POSTGRES_USER: airflow
+  #     POSTGRES_PASSWORD: airflow
+  #     POSTGRES_DB: airflow
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: [ "CMD-SHELL", "pg_isready -U airflow -d airflow" ]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   networks:
+  #     - airflow-net
 
-  postgres:
-    image: postgres:13
-    container_name: postgres
-    environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - airflow-net
+  # airflow-init:
+  #   <<: *airflow-common
+  #   container_name: airflow-init
+  #   depends_on:
+  #     - postgres
+  #   entrypoint: /bin/bash
+  #   command:
+  #     [
+  #       "/bin/bash",
+  #       "-c",
+  #       "airflow db init && airflow users create --username admin --password
+  #         admin --role Admin --firstname Admin --lastname User --email
+  #         admin@example.com | airflow connections add spark_standalone_client
+  #         --conn-json '{\"conn_type\": \"spark\", \"host\":
+  #         \"spark://spark-master\", \"port\": 7077}'",
+  #     ]
+  #   restart: "no"
 
-  airflow-init:
-    image: apache/airflow:2.8.3
-    container_name: airflow-init
-    depends_on:
-      - postgres
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
-      AIRFLOW__CORE__FERNET_KEY: "04VgFYBDheYCEGguaknpjvmRVCzrSk2fN7hbrYEEkgc="
-    volumes:
-      - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-    entrypoint: /bin/bash
-    command: -c "airflow db init && airflow users create --username admin --password admin --role Admin --firstname Admin --lastname User --email admin@example.com"
-    networks:
-      - airflow-net
-    restart: "no"
+  # airflow-webserver:
+  #   <<: *airflow-common
+  #   container_name: airflow-webserver
+  #   depends_on:
+  #     - airflow-init
+  #   ports:
+  #     - "8087:8080"
+  #   environment:
+  #     <<: *airflow-common-env
+  #     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+  #     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
+  #     AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+  #     AIRFLOW_UID: "50000"
+  #   command: webserver
+  #   restart: always
 
-  airflow-webserver:
-    image: apache/airflow:2.8.3
-    container_name: airflow-webserver
-    depends_on:
-      - airflow-init
-    ports:
-      - "8087:8080"
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
-      AIRFLOW__CORE__FERNET_KEY: "04VgFYBDheYCEGguaknpjvmRVCzrSk2fN7hbrYEEkgc="
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
-      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW_UID: "50000"
-    volumes:
-      - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-    command: webserver
-    networks:
-      - airflow-net
-    restart: always
-
-  airflow-scheduler:
-    image: apache/airflow:2.8.3
-    container_name: airflow-scheduler
-    depends_on:
-      - airflow-init
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
-      AIRFLOW__CORE__FERNET_KEY: "04VgFYBDheYCEGguaknpjvmRVCzrSk2fN7hbrYEEkgc="
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW_UID: "50000"
-    volumes:
-      - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-    command: scheduler
-    networks:
-      - airflow-net
-    restart: always
+  # airflow-scheduler:
+  #   <<: *airflow-common
+  #   container_name: airflow-scheduler
+  #   depends_on:
+  #     - airflow-init
+  #   environment:
+  #     <<: *airflow-common-env
+  #     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+  #     AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+  #     AIRFLOW_UID: "50000"
+  #   command: scheduler
+  #   restart: always
 
 volumes:
   minio_data:

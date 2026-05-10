@@ -115,8 +115,8 @@ def main():
         spark_cmd = (
             "docker compose exec spark-master /opt/spark/bin/spark-submit "
             "--master spark://spark-master:7077 "
-            "--packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,"
-            "org.apache.hadoop:hadoop-aws:3.4.2 "
+            "--packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1 "
+            # "org.apache.hadoop:hadoop-aws:3.4.2 "
             "/opt/spark/work-dir/spark_stream_processor.py"
         )
 

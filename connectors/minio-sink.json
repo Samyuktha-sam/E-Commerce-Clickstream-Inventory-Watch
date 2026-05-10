@@ -1,0 +1,26 @@
+{
+    "name": "clickstream-minio-sink",
+    "config": {
+        "connector.class": "io.confluent.connect.s3.S3SinkConnector",
+        "tasks.max": "1",
+        "topics": "clickstream-events",
+        "s3.bucket.name": "clickstream-lake",
+        "store.url": "http://minio:9000",
+        "s3.region": "us-east-1",
+        "aws.access.key.id": "minioadmin",
+        "aws.secret.access.key": "minioadmin",
+        "storage.class": "io.confluent.connect.s3.storage.S3Storage",
+        "format.class": "io.confluent.connect.s3.format.parquet.ParquetFormat",
+        "flush.size": "1000",
+        "rotate.interval.ms": "60000",
+        "partitioner.class": "io.confluent.connect.storage.partitioner.TimeBasedPartitioner",
+        "path.format": "'raw'/'date'=YYYY-MM-dd",
+        "partition.duration.ms": "86400000",
+        "timestamp.extractor": "Record",
+        "timezone": "UTC",
+        "locale": "en",
+        "schema.compatibility": "NONE",
+        "topics.dir": "",
+        "behavior.on.null.values": "ignore"
+    }
+}
