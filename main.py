@@ -67,6 +67,10 @@ def main():
     print("🚀 E-Commerce Clickstream Inventory Watch - Full Pipeline")
     print("=" * 70)
 
+    producer_process = None
+    spark_process = None
+    spark_process2 = None
+
     try:
         # Step 1: Start Docker Compose
         if not run_command(
@@ -115,27 +119,62 @@ def main():
         spark_cmd = (
             "docker compose exec spark-master /opt/spark/bin/spark-submit "
             "--master spark://spark-master:7077 "
+            "--conf spark.cores.max=2 "
+            "--conf spark.executor.cores=2 "
+            "--conf spark.driver.memory=1g "
+            "--conf spark.sql.kafka.metrics.enabled=false "
+            "--conf spark.executor.memory=1g "
             "--packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1 "
-            # "org.apache.hadoop:hadoop-aws:3.4.2 "
             "/opt/spark/work-dir/spark_stream_processor.py"
         )
-#     """
-#     docker compose exec spark-master /opt/spark/bin/spark-submit \
-#   --master spark://spark-master:7077 \
-#   --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,org.apache.hadoop:hadoop-aws:3.4.2 \
-#   --conf spark.sql.streaming.metricsEnabled=false \
-#   --conf spark.sql.streaming.ui.enabled=false \
-#   --conf spark.ui.showConsoleProgress=false \
-#   /opt/spark/work-dir/spark_raw_sink.py
-#     """
-        success = run_command(
+
+        spark_process = subprocess.Popen(
             spark_cmd,
             shell=True,
-            description="Running Spark Stream Processor (processes Kafka events)",
+            cwd=PROJECT_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        print(f"✓ Spark Stream Processor started (PID: {spark_process.pid})")
+
+        # Step 4: Run Spark Raw Sink
+        print("\n" + "=" * 70)
+        print("Step 4: Starting Spark Raw Sink")
+        print("=" * 70)
+
+        spark_cmd2 = (
+            "docker compose exec spark-master /opt/spark/bin/spark-submit "
+            "--master spark://spark-master:7077 "
+            "--packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,org.apache.hadoop:hadoop-aws:3.4.2 "
+            "--conf spark.sql.streaming.metricsEnabled=false "
+            "--conf spark.sql.streaming.ui.enabled=false "
+            "--conf spark.ui.showConsoleProgress=false "
+            "--conf spark.cores.max=2 "
+            "--conf spark.executor.cores=2 "
+            "--conf spark.driver.memory=1g "
+            "--conf spark.sql.kafka.metrics.enabled=false "
+            "--conf spark.executor.memory=1g "
+            "/opt/spark/work-dir/spark_raw_sink.py"
         )
 
-        if not success:
-            print("\n⚠ Spark job completed or encountered an error")
+        spark_process2 = subprocess.Popen(
+            spark_cmd2,
+            shell=True,
+            cwd=PROJECT_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        print(f"✓ Spark Raw Sink started (PID: {spark_process2.pid})")
+
+        # Let Spark jobs process events
+        print("\n⏳ Spark jobs are running... (Press Ctrl+C to stop)")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
 
         # Cleanup
         print("\n" + "=" * 70)
@@ -143,15 +182,39 @@ def main():
         print("=" * 70)
 
         # Terminate producer
-        try:
-            producer_process.terminate()
-            producer_process.wait(timeout=5)
-            print("✓ Producer terminated")
-        except subprocess.TimeoutExpired:
-            producer_process.kill()
-            print("✓ Producer force-killed")
-        except Exception as e:
-            print(f"⚠ Error terminating producer: {e}")
+        if producer_process:
+            try:
+                producer_process.terminate()
+                producer_process.wait(timeout=5)
+                print("✓ Producer terminated")
+            except subprocess.TimeoutExpired:
+                producer_process.kill()
+                print("✓ Producer force-killed")
+            except Exception as e:
+                print(f"⚠ Error terminating producer: {e}")
+
+        # Terminate Spark processes
+        if spark_process:
+            try:
+                spark_process.terminate()
+                spark_process.wait(timeout=5)
+                print("✓ Spark Stream Processor terminated")
+            except subprocess.TimeoutExpired:
+                spark_process.kill()
+                print("✓ Spark Stream Processor force-killed")
+            except Exception as e:
+                print(f"⚠ Error terminating Spark Stream Processor: {e}")
+
+        if spark_process2:
+            try:
+                spark_process2.terminate()
+                spark_process2.wait(timeout=5)
+                print("✓ Spark Raw Sink terminated")
+            except subprocess.TimeoutExpired:
+                spark_process2.kill()
+                print("✓ Spark Raw Sink force-killed")
+            except Exception as e:
+                print(f"⚠ Error terminating Spark Raw Sink: {e}")
 
         # Stop Docker Compose
         print("Stopping Docker Compose services...")
@@ -166,10 +229,34 @@ def main():
         print("\n\n⚠ Pipeline interrupted by user")
 
         # Cleanup on interrupt
-        try:
-            producer_process.terminate()
-        except:
-            pass
+        if producer_process:
+            try:
+                producer_process.terminate()
+                print("✓ Producer terminated")
+            except:
+                pass
+
+        if spark_process:
+            try:
+                spark_process.terminate()
+                spark_process.wait(timeout=5)
+                print("✓ Spark Stream Processor terminated")
+            except subprocess.TimeoutExpired:
+                spark_process.kill()
+                print("✓ Spark Stream Processor force-killed")
+            except:
+                pass
+
+        if spark_process2:
+            try:
+                spark_process2.terminate()
+                spark_process2.wait(timeout=5)
+                print("✓ Spark Raw Sink terminated")
+            except subprocess.TimeoutExpired:
+                spark_process2.kill()
+                print("✓ Spark Raw Sink force-killed")
+            except:
+                pass
 
         subprocess.run("docker compose down", shell=True, cwd=PROJECT_ROOT)
         sys.exit(130)
