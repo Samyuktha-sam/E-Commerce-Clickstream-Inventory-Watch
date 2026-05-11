@@ -9,10 +9,10 @@ RUN apt-get update && apt-get install -y curl
 RUN /opt/spark/bin/spark-submit \
     --conf "spark.jars.ivy=/tmp/.ivy2" \
     --packages \
-org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,\
-org.apache.hadoop:hadoop-aws:3.3.4,\
-com.clickhouse.spark:clickhouse-spark-runtime-4.0_2.13:0.10.0 \
-io.delta:delta-spark_4.1_2.13:4.1.0 \
+    org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,\
+    org.apache.hadoop:hadoop-aws:3.3.4,\
+    com.clickhouse.spark:clickhouse-spark-runtime-4.0_2.13:0.10.0 \
+    io.delta:delta-spark_4.1_2.13:4.1.0 \
     --master local \
     --class org.apache.spark.deploy.SparkSubmit \
     /opt/spark/jars/spark-core_2.13-4.1.1.jar \
@@ -48,9 +48,9 @@ RUN apt-get update && apt-get install -y \
 # Copy flattened Kafka dependencies from the downloader stage
 COPY --from=deps /opt/spark/deps-kafka/* /opt/spark/jars/
 
-# Create directories for checkpoints and extra logs
-RUN mkdir -p /opt/spark/checkpoints /opt/spark/logs && \
-    chmod -R 777 /opt/spark/checkpoints /opt/spark/logs
+# Create directories for checkpoints, extra logs, and Ivy cache
+RUN mkdir -p /opt/spark/checkpoints /opt/spark/logs /opt/spark/.ivy2/cache && \
+    chmod -R 777 /opt/spark/checkpoints /opt/spark/logs /opt/spark/.ivy2
 
 WORKDIR /opt/spark
 

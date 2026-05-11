@@ -73,6 +73,12 @@ services:
       - SPARK_RPC_ENCRYPTION_ENABLED=no
       - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
       - SPARK_SSL_ENABLED=no
+      - SPARK_SUBMIT_OPTS=-Divy.home=/opt/spark/.ivy2
+      - Divy.cache.dir=/opt/spark/.ivy2/cache
+    volumes:
+      - ./cache/ivy:/opt/spark/.ivy2
+      - ./cache/checkpoints:/opt/spark/checkpoints
+      - ./stream_layer/:/opt/spark/work-dir/
     command:
       [
         "/opt/spark/bin/spark-class",
@@ -110,16 +116,24 @@ services:
       - SPARK_MODE=connect
       - SPARK_MASTER=spark://spark-master:7077
       - SPARK_CONNECT_LISTEN_ADDRESS=0.0.0.0
+      - SPARK_SUBMIT_OPTS=-Divy.home=/opt/spark/.ivy2
+      - Divy.cache.dir=/opt/spark/.ivy2/cache
+    volumes:
+      - ./cache/ivy:/opt/spark/.ivy2
+      - ./cache/checkpoints:/opt/spark/checkpoints
     command: >
       /opt/spark/sbin/start-connect-server.sh 
       --master spark://spark-master:7077 
       --conf spark.driver.bindAddress=0.0.0.0
-    volumes:
-      - ./checkpoints:/opt/spark/checkpoints
     restart: always
     networks:
       - spark-network
       - default-net
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 15002"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   spark-worker:
     # image: apache/spark:4.1.1
@@ -132,9 +146,19 @@ services:
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES:-1}
-      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY:-1g}
-    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES:-8}
+      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY:-8g}
+      - SPARK_SUBMIT_OPTS=-Divy.home=/opt/spark/.ivy2
+      - Divy.cache.dir=/opt/spark/.ivy2/cache
+    volumes:
+      - ./cache/ivy:/opt/spark/.ivy2
+      - ./cache/checkpoints:/opt/spark/checkpoints
+    command:
+      [
+        "/opt/spark/bin/spark-class",
+        "org.apache.spark.deploy.worker.Worker",
+        "spark://spark-master:7077",
+      ]
     networks:
       - spark-network
       - default-net
@@ -318,6 +342,7 @@ volumes:
   minio_data:
   kafka_data:
   spark-data:
+  spark-ivy-cache:
   postgres-data:
 
 networks:
