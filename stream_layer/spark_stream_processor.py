@@ -91,7 +91,6 @@ def detect_flash_sales(df: DataFrame) -> DataFrame:
         F.count(F.when(F.col("event_type") == "view", 1)).alias("view_count"),
     )
 
-    # Lower thresholds for testing: view_count >= 3 AND purchase_count < 1
     return windowed_stats.filter(
         (F.col("view_count") >= 5) & (F.col("purchase_count") < 3)
     ).select(
@@ -130,7 +129,7 @@ def main() -> None:
             alerts_df.writeStream.outputMode("append")
             .format("console")
             .option("truncate", "false")
-            .trigger(processingTime="5 seconds")
+            .trigger(processingTime="30 seconds")
             .start()
         )
         logger.info(f"✓ Console sink started for debugging")
@@ -143,7 +142,7 @@ def main() -> None:
             .option("kafka.bootstrap.servers", config.kafka_bootstrap)
             .option("topic", config.alerts_topic)
             .option("checkpointLocation", f"{config.spark_checkpoint}/checkpoints")
-            .trigger(processingTime="5 seconds")
+            .trigger(processingTime="30 seconds")
             .start()
         )
         logger.info(
@@ -159,6 +158,8 @@ def main() -> None:
         query.awaitTermination()
     except (Py4JJavaError, StreamingQueryException) as e:
         logger.error("Flash Sale Detector failed: %s", str(e))
+    except KeyboardInterrupt:
+        logger.info("Flash Sale Detector interrupted by user.")
     finally:
         spark.stop()
 
