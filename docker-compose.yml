@@ -32,6 +32,8 @@ services:
 
   kafka-init:
     image: apache/kafka:4.1.1
+    user: "0:0"
+    network_mode: "service:broker"
     depends_on:
       broker:
         condition: service_healthy
@@ -39,35 +41,34 @@ services:
       - /bin/bash
       - -ec
       - |
+        echo '127.0.0.1 broker' >> /etc/hosts
         for topic in clickstream-events alerts-notifications batch-results; do
           /opt/kafka/bin/kafka-topics.sh \
-            --bootstrap-server broker:29092 \
+            --bootstrap-server localhost:29092 \
             --create \
             --if-not-exists \
             --topic "$${topic}" \
             --partitions 3 \
             --replication-factor 1;
         done
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server broker:29092 --list
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list
     restart: "no"
 
   spark-master:
-    image: apache/spark:4.1.1
+    build:
+      context: .
+      dockerfile: spark/Dockerfile
     container_name: spark-master
+    user: "0:0"
     environment:
       HOME: /tmp
       PYTHONPATH: /opt/pipeline
-      SPARK_SUBMIT_OPTS: -Divy.home=/opt/spark/.ivy2 -Divy.cache.dir=/opt/spark/.ivy2/cache
+      SPARK_SUBMIT_OPTS: -Divy.home=/tmp/.ivy2 -Divy.cache.dir=/tmp/.ivy2/cache
     command:
       [
-        "/opt/spark/bin/spark-class",
-        "org.apache.spark.deploy.master.Master",
-        "-h",
-        "spark-master",
-        "--port",
-        "7077",
-        "--webui-port",
-        "8080"
+        "/bin/bash",
+        "-lc",
+        "mkdir -p /tmp/.ivy2/cache && exec /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master -h spark-master --port 7077 --webui-port 8080"
       ]
     ports:
       - "7077:7077"
@@ -75,28 +76,31 @@ services:
       - "4040:4040"
     volumes:
       - ./:/opt/pipeline
-      - spark_ivy:/opt/spark/.ivy2
+      - spark_ivy:/tmp/.ivy2
       - spark_checkpoints:/opt/spark/checkpoints
     restart: unless-stopped
 
   spark-worker:
-    image: apache/spark:4.1.1
+    build:
+      context: .
+      dockerfile: spark/Dockerfile
     container_name: spark-worker
+    user: "0:0"
     depends_on:
       - spark-master
     environment:
       HOME: /tmp
       PYTHONPATH: /opt/pipeline
-      SPARK_SUBMIT_OPTS: -Divy.home=/opt/spark/.ivy2 -Divy.cache.dir=/opt/spark/.ivy2/cache
+      SPARK_SUBMIT_OPTS: -Divy.home=/tmp/.ivy2 -Divy.cache.dir=/tmp/.ivy2/cache
     command:
       [
-        "/opt/spark/bin/spark-class",
-        "org.apache.spark.deploy.worker.Worker",
-        "spark://spark-master:7077"
+        "/bin/bash",
+        "-lc",
+        "mkdir -p /tmp/.ivy2/cache && exec /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077"
       ]
     volumes:
       - ./:/opt/pipeline
-      - spark_ivy:/opt/spark/.ivy2
+      - spark_ivy:/tmp/.ivy2
       - spark_checkpoints:/opt/spark/checkpoints
     restart: unless-stopped
 
@@ -169,7 +173,9 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW__CORE__DAGS_FOLDER: /opt/pipeline/airflow/dags
       AIRFLOW__CORE__FERNET_KEY: 04VgFYBDheYCEGguaknpjvmRVCzrSk2fN7hbrYEEkgc=
-      AIRFLOW__API__AUTH_BACKENDS: airflow.api_fastapi.auth.backend.session
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:ADMIN
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/simple_auth_manager_passwords.json
       AIRFLOW__SMTP__SMTP_HOST: mailpit
       AIRFLOW__SMTP__SMTP_PORT: 1025
       AIRFLOW__SMTP__SMTP_MAIL_FROM: airflow@example.com
@@ -204,9 +210,9 @@ services:
       - -ec
       - |
         mkdir -p /opt/airflow/logs /opt/airflow/reports
-        chown -R airflow:root /opt/airflow/logs /opt/airflow/reports
+        python -c "from pathlib import Path; Path('/opt/airflow/simple_auth_manager_passwords.json').write_text('{\"admin\": \"admin\"}\n', encoding='utf-8')"
+        chown -R airflow:root /opt/airflow/logs /opt/airflow/reports /opt/airflow/simple_auth_manager_passwords.json
         su airflow -c 'airflow db migrate'
-        su airflow -c 'airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com'
     restart: "no"
 
   airflow-api-server:
