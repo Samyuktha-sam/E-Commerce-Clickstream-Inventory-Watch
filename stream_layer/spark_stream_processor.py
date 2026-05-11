@@ -130,7 +130,7 @@ def main() -> None:
             alerts_df.writeStream.outputMode("append")
             .format("console")
             .option("truncate", "false")
-            .trigger(processingTime="3 seconds")
+            .trigger(processingTime="5 seconds")
             .start()
         )
         logger.info(f"✓ Console sink started for debugging")
@@ -143,7 +143,7 @@ def main() -> None:
             .option("kafka.bootstrap.servers", config.kafka_bootstrap)
             .option("topic", config.alerts_topic)
             .option("checkpointLocation", f"{config.spark_checkpoint}/checkpoints")
-            .trigger(processingTime="3 seconds")
+            .trigger(processingTime="5 seconds")
             .start()
         )
         logger.info(
