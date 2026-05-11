@@ -1,15 +1,14 @@
 [project]
 name = "e-commerce-clickstream-inventory-watch"
 version = "0.1.0"
-description = "Add your description here"
+description = "Minimal lambda-architecture clickstream pipeline with Kafka, Spark, Airflow, Delta Lake, and MinIO"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "apache-airflow>=3.2.1",
-    "apache-airflow-providers-apache-spark>=6.0.1",
-    "kafka>=1.3.5",
-    "kafka-python>=2.3.1",
-    "pyspark[sql]>=4.1.1",
+    "apache-airflow==3.2.1",
+    "delta-spark==4.0.0",
+    "kafka-python==2.2.15",
+    "pyspark[sql]==4.1.1",
 ]
 
 [dependency-groups]

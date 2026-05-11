@@ -22,10 +22,16 @@ class AppConfig:
     kafka_topic: str = os.getenv("KAFKA_TOPIC", "clickstream-events")
     alerts_topic: str = os.getenv("ALERTS_TOPIC", "alerts-notifications")
     spark_master: str = os.getenv("SPARK_MASTER", "spark://spark-master:7077")
-    # Separate checkpoint path to avoid interference
-    spark_checkpoint: str = os.getenv(
-        "SPARK_CHECKPOINT_PATH", "/tmp/spark-checkpoints/flash-sale-detector"
+    spark_packages: str = os.getenv(
+        "SPARK_EXTRA_PACKAGES",
+        "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,io.delta:delta-spark_2.13:4.0.0,org.apache.hadoop:hadoop-aws:3.4.2",
     )
+    spark_checkpoint_base: str = os.getenv("SPARK_CHECKPOINT_BASE", "/opt/spark/checkpoints")
+    starting_offsets: str = os.getenv("KAFKA_STARTING_OFFSETS", "earliest")
+    flash_sale_view_threshold: int = int(os.getenv("FLASH_SALE_VIEW_THRESHOLD", "100"))
+    flash_sale_purchase_threshold: int = int(os.getenv("FLASH_SALE_PURCHASE_THRESHOLD", "5"))
+    flash_sale_window_duration: str = os.getenv("FLASH_SALE_WINDOW_DURATION", "10 minutes")
+    flash_sale_slide_duration: str = os.getenv("FLASH_SALE_SLIDE_DURATION", "1 minute")
 
     CLICKSTREAM_SCHEMA: StructType = StructType(
         [
@@ -42,27 +48,15 @@ def get_spark_session(config: AppConfig) -> SparkSession:
     return (
         SparkSession.builder.appName("SpeedLayer-FlashSaleDetector")
         .master(config.spark_master)
-        .config(
-            "spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1"
-        )
-        # 1. State Store Optimization (CRITICAL for Flash Sales)
-        # Replaces default In-Memory store with RocksDB.
-        # Better for large stateful windows and prevents OOM during spikes.
+        .config("spark.jars.packages", config.spark_packages)
         .config(
             "spark.sql.streaming.stateStore.providerClass",
             "org.apache.spark.sql.execution.streaming.state.RocksDBStateStoreProvider",
         )
-        # 2. Shuffle & Task Tuning
-        # Since we are using 2 cores per executor, 4 partitions is a good "sweet spot."
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.default.parallelism", "4")
-        # 3. Suppress Adaptive Query Execution (AQE) Warnings
-        # As seen in your previous logs, AQE isn't supported in Streaming. Let's turn it off.
         .config("spark.sql.adaptive.enabled", "false")
-        # 4. Metadata & Checkpoint Cleanup
-        # Prevents the checkpoint directory from growing indefinitely by limiting history.
         .config("spark.sql.streaming.minBatchesToRetain", "20")
-        # 5. Reliability & Performance
         .config("spark.streaming.stopGracefullyOnShutdown", "true")
         .config(
             "spark.sql.streaming.checkpointFileManager.class",
@@ -82,20 +76,26 @@ def transform_raw_stream(raw_df: DataFrame, schema: StructType) -> DataFrame:
     )
 
 
-def detect_flash_sales(df: DataFrame) -> DataFrame:
+def detect_flash_sales(df: DataFrame, config: AppConfig) -> DataFrame:
     """Identifies products with high interest (views) but low conversion (purchases)."""
     windowed_stats = df.groupBy(
-        F.window("event_time", "5 minutes", "1 minute"), "product_id"
+        F.window(
+            "event_time",
+            config.flash_sale_window_duration,
+            config.flash_sale_slide_duration,
+        ),
+        "product_id",
     ).agg(
         F.count(F.when(F.col("event_type") == "purchase", 1)).alias("purchase_count"),
         F.count(F.when(F.col("event_type") == "view", 1)).alias("view_count"),
     )
 
     return windowed_stats.filter(
-        (F.col("view_count") > 5) & (F.col("purchase_count") < 2)
+        (F.col("view_count") > config.flash_sale_view_threshold)
+        & (F.col("purchase_count") < config.flash_sale_purchase_threshold)
     ).select(
-        "window.start",
-        "window.end",
+        F.col("window.start").alias("window_start"),
+        F.col("window.end").alias("window_end"),
         "product_id",
         "view_count",
         "purchase_count",
@@ -113,32 +113,37 @@ def main() -> None:
             spark.readStream.format("kafka")
             .option("kafka.bootstrap.servers", config.kafka_bootstrap)
             .option("subscribe", config.kafka_topic)
-            .option("startingOffsets", "latest")
+            .option("startingOffsets", config.starting_offsets)
             .option("failOnDataLoss", "false")
             .load()
         )
 
         decoded_df = transform_raw_stream(raw_stream, config.CLICKSTREAM_SCHEMA)
-        alerts_df = detect_flash_sales(decoded_df)
+        alerts_df = detect_flash_sales(decoded_df, config)
 
-        # Sink: Publish alerts back to Kafka for downstream microservices
         query = (
             alerts_df.selectExpr("to_json(struct(*)) AS value")
             .writeStream.outputMode("append")
             .format("kafka")
             .option("kafka.bootstrap.servers", config.kafka_bootstrap)
             .option("topic", config.alerts_topic)
-            .option("checkpointLocation", f"{config.spark_checkpoint}/checkpoints")
+            .option(
+                "checkpointLocation",
+                f"{config.spark_checkpoint_base}/flash-sale-detector",
+            )
             .trigger(processingTime="30 seconds")
             .start()
         )
 
         logger.info(
-            "Flash Sale Detector started. Listening for high-view/low-purchase patterns."
+            "Flash Sale Detector started with %s-minute window and thresholds views>%s purchases<%s.",
+            config.flash_sale_window_duration,
+            config.flash_sale_view_threshold,
+            config.flash_sale_purchase_threshold,
         )
         query.awaitTermination()
-    except (Py4JJavaError, StreamingQueryException) as e:
-        logger.error("Flash Sale Detector failed: %s", str(e))
+    except (Py4JJavaError, StreamingQueryException) as exc:
+        logger.error("Flash Sale Detector failed: %s", str(exc))
     finally:
         spark.stop()
 

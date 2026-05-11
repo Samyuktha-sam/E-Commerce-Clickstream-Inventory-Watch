@@ -1,30 +1,49 @@
+from __future__ import annotations
+
+import html
+import os
+import shutil
+import subprocess
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from airflow.sdk import DAG
-from airflow.providers.standard.operators.bash import BashOperator
+from airflow.sdk import DAG, task
+from airflow.utils.email import send_email
 
-default_args = {
-    "owner": "clickstream-team",
-    "retries": 1,
-    "retry_delay": timedelta(minutes=5),
-}
+REPORT_FILE = Path(os.getenv("LOCAL_REPORT_DIR", "/opt/airflow/reports")) / "daily_summary.txt"
+SPARK_JOB = "/opt/pipeline/batch/spark_daily_batch_job.py"
 
 with DAG(
     dag_id="daily_clickstream_batch_processing",
-    default_args=default_args,
-    description="Run Spark 4.1.1 batch job for daily clickstream analytics from S3",
+    description="Daily segmentation, top-product, and conversion-rate report",
     start_date=datetime(2026, 1, 1),
     schedule="@daily",
     catchup=False,
-    tags=["clickstream", "spark", "s3", "batch"],
-) as dag:
+    default_args={"owner": "clickstream-team", "retries": 1, "retry_delay": timedelta(minutes=5)},
+    tags=["clickstream", "spark", "delta", "batch"],
+):
+    @task
+    def run_spark_batch_job() -> str:
+        spark_submit = shutil.which("spark-submit")
+        if spark_submit is None:
+            raise FileNotFoundError("spark-submit is not available in the Airflow image")
 
-    run_spark_batch_job = BashOperator(
-        task_id="run_spark_daily_batch_job",
-        bash_command=(
-            "spark-submit "
-            "--packages org.apache.hadoop:hadoop-aws:3.4.1 "
-            "/opt/airflow/batch/spark_daily_batch_job.py"
-        ),
-    )
+        subprocess.run(
+            [spark_submit, "--master", os.getenv("SPARK_MASTER", "spark://spark-master:7077"), SPARK_JOB],
+            check=True,
+        )
+        if not REPORT_FILE.exists():
+            raise FileNotFoundError(f"Expected report file was not created: {REPORT_FILE}")
+        return str(REPORT_FILE)
 
+    @task
+    def email_summary(report_file: str) -> None:
+        recipient = os.getenv("REPORT_EMAIL_TO", "reports@example.com")
+        report_body = Path(report_file).read_text(encoding="utf-8")
+        send_email(
+            to=recipient,
+            subject=f"Daily Clickstream Summary - {datetime.utcnow():%Y-%m-%d}",
+            html_content=f"<pre>{html.escape(report_body)}</pre>",
+        )
+
+    email_summary(run_spark_batch_job())
