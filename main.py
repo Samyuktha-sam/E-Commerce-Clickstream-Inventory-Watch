@@ -168,6 +168,25 @@ def main():
         )
         print(f"✓ Spark Raw Sink started (PID: {spark_process2.pid})")
 
+        # Step 2: Run Clickstream Producer
+        print("\n" + "=" * 70)
+        print("Step 2: Starting Clickstream Producer (generating events)")
+        print("=" * 70)
+        print("The producer will run continuously in the background...")
+
+        producer_process = subprocess.Popen(
+            f"uv run producers/clickstream_producer.py",
+            shell=True,
+            cwd=PROJECT_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        print(f"✓ Producer started (PID: {producer_process.pid})")
+
+        # Give producer time to start generating events
+        print("\n⏳ Letting producer generate events...")
+        time.sleep(10)
         # Let Spark jobs process events
         print("\n⏳ Spark jobs are running... (Press Ctrl+C to stop)")
         try:

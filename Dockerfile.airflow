@@ -1,0 +1,41 @@
+FROM apache/airflow:3.2.1-python3.11
+
+USER root
+
+# 2. Install Java 17
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openjdk-17-jre-headless wget \
+  && apt-get autoremove -yqq --purge \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
+# 3. Setup Spark 4.1.1
+ENV SPARK_VERSION=4.1.1
+ENV HADOOP_VERSION=3
+ENV SPARK_HOME=/opt/spark
+ENV PATH="${SPARK_HOME}/bin:${PATH}"
+
+# Corrected variables and URL
+RUN wget https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz \
+  && tar -xvzf spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz \
+  && mv spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION} ${SPARK_HOME} \
+  && rm spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz
+
+# 4. Download S3A V2 Jars (Matching Hadoop 3.4.0)
+WORKDIR ${SPARK_HOME}/jars
+RUN wget https://maven.org \
+  && wget https://maven.org
+
+USER airflow
+
+RUN pip install --no-cache-dir "apache-airflow-providers-standard" 
+# RUN pip install --no-cache-dir "apache-airflow-providers-apache-kafka" 
+# RUN pip install --no-cache-dir   "apache-airflow-providers-smtp"
+# RUN pip install --no-cache-dir "pyspark[connect]"
+
+# 5. Install Python Packages (Provider v6.0.1 is required for Airflow 3 + Spark 4)
+RUN pip install --no-cache-dir "apache-airflow-providers-apache-spark>=4.8.1"
+# RUN pip install --no-cache-dir "apache-airflow-providers-amazon" 
+# RUN pip install --no-cache-dir "pyspark>=4.0.0" 
+RUN pip install --no-cache-dir "boto3"
+RUN pip install --no-cache-dir "minio"

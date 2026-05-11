@@ -1,0 +1,61 @@
+# Stage 1: Dependency Downloader
+FROM apache/spark:4.1.1 AS deps
+
+USER root
+RUN apt-get update && apt-get install -y curl
+
+# Use spark-submit to download the full dependency tree for Kafka
+# We use a deterministic ivy path to avoid version-specific directory names
+RUN /opt/spark/bin/spark-submit \
+    --conf "spark.jars.ivy=/tmp/.ivy2" \
+    --packages \
+    org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,\
+    org.apache.hadoop:hadoop-aws:3.3.4,\
+    com.clickhouse.spark:clickhouse-spark-runtime-4.0_2.13:0.10.0 \
+    io.delta:delta-spark_4.1_2.13:4.1.0 \
+    --master local \
+    --class org.apache.spark.deploy.SparkSubmit \
+    /opt/spark/jars/spark-core_2.13-4.1.1.jar \
+    --version || true
+
+# Flatten the Ivy cache structure so all JARs are in one directory
+RUN mkdir -p /opt/spark/deps-kafka && \
+    find /tmp/.ivy2 -name "*.jar" -exec cp {} /opt/spark/deps-kafka/ \;
+
+# Stage 2: Final Image
+FROM apache/spark:4.1.1
+
+USER root
+
+# Build arguments for flexibility
+ARG SPARK_VERSION=4.1.1
+ARG SCALA_VERSION=2.13
+
+# Environment variables for easy configuration
+ENV SPARK_VERSION=${SPARK_VERSION} \
+    SCALA_VERSION=${SCALA_VERSION} \
+    HOME=/root \
+    SPARK_NO_DAEMONIZE=true
+
+# Set PYTHONPATH separately to avoid undefined variable warnings
+ENV PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.9.7-src.zip
+
+# Install utility tools
+RUN apt-get update && apt-get install -y \
+    curl wget netcat-traditional \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy flattened Kafka dependencies from the downloader stage
+COPY --from=deps /opt/spark/deps-kafka/* /opt/spark/jars/
+
+# Create directories for checkpoints, extra logs, and Ivy cache
+RUN mkdir -p /opt/spark/checkpoints /opt/spark/logs /opt/spark/.ivy2/cache && \
+    chmod -R 777 /opt/spark/checkpoints /opt/spark/logs /opt/spark/.ivy2
+
+WORKDIR /opt/spark
+
+# Switch back to spark user for security
+USER spark
+
+# Default command - can be overridden in docker-compose
+CMD ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]

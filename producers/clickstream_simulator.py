@@ -25,7 +25,7 @@ class ClickstreamSimulator:
         "P110",
     ]
     DEFAULT_EVENTS = ["view", "add_to_cart", "purchase"]
-    DEFAULT_EVENT_WEIGHTS = [70, 20, 10]  # Percentages for view, add_to_cart, purchase
+    DEFAULT_EVENT_WEIGHTS = [70, 25, 5]  # Percentages for view, add_to_cart, purchase
 
     def __init__(
         self,
