@@ -28,7 +28,11 @@ RUN wget https://maven.org \
 
 USER airflow
 
-RUN pip install --no-cache-dir "apache-airflow-providers-standard"
+RUN pip install --no-cache-dir \
+    "apache-airflow-providers-standard" \
+    "apache-airflow-providers-apache-kafka" \
+    "apache-airflow-providers-smtp"\
+    "pyspark[connect]"
 
 # 5. Install Python Packages (Provider v6.0.1 is required for Airflow 3 + Spark 4)
 RUN pip install --no-cache-dir \

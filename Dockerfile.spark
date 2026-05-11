@@ -1,48 +1,61 @@
-FROM apache/spark:4.1.1-scala2.13-java17-python3-ubuntu
+# Stage 1: Dependency Downloader
+FROM apache/spark:4.1.1 AS deps
+
+USER root
+RUN apt-get update && apt-get install -y curl
+
+# Use spark-submit to download the full dependency tree for Kafka
+# We use a deterministic ivy path to avoid version-specific directory names
+RUN /opt/spark/bin/spark-submit \
+    --conf "spark.jars.ivy=/tmp/.ivy2" \
+    --packages \
+org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,\
+org.apache.hadoop:hadoop-aws:3.3.4,\
+com.clickhouse.spark:clickhouse-spark-runtime-4.0_2.13:0.10.0 \
+io.delta:delta-spark_4.1_2.13:4.1.0 \
+    --master local \
+    --class org.apache.spark.deploy.SparkSubmit \
+    /opt/spark/jars/spark-core_2.13-4.1.1.jar \
+    --version || true
+
+# Flatten the Ivy cache structure so all JARs are in one directory
+RUN mkdir -p /opt/spark/deps-kafka && \
+    find /tmp/.ivy2 -name "*.jar" -exec cp {} /opt/spark/deps-kafka/ \;
+
+# Stage 2: Final Image
+FROM apache/spark:4.1.1
 
 USER root
 
-# Install system dependencies
+# Build arguments for flexibility
+ARG SPARK_VERSION=4.1.1
+ARG SCALA_VERSION=2.13
+
+# Environment variables for easy configuration
+ENV SPARK_VERSION=${SPARK_VERSION} \
+    SCALA_VERSION=${SCALA_VERSION} \
+    HOME=/root \
+    SPARK_NO_DAEMONIZE=true
+
+# Set PYTHONPATH separately to avoid undefined variable warnings
+ENV PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.9.7-src.zip
+
+# Install utility tools
 RUN apt-get update && apt-get install -y \
     curl wget netcat-traditional \
-    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages (including JupyterLab)
-RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir \
-    jupyterlab \
-    notebook \
-    kafka-python \
-    minio \
-    delta-spark \
-    pandas \
-    numpy \
-    matplotlib \
-    seaborn \
-    pyarrow
+# Copy flattened Kafka dependencies from the downloader stage
+COPY --from=deps /opt/spark/deps-kafka/* /opt/spark/jars/
 
-# Create extra jars directory
-RUN mkdir -p /opt/spark/jars/extra
+# Create directories for checkpoints and extra logs
+RUN mkdir -p /opt/spark/checkpoints /opt/spark/logs && \
+    chmod -R 777 /opt/spark/checkpoints /opt/spark/logs
 
-# Download necessary JARs for Kafka + MinIO
-WORKDIR /opt/spark/jars/extra
+WORKDIR /opt/spark
 
-# Spark Kafka connector (match Spark 4.1.1)
-RUN wget -q https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_2.13/4.1.1/spark-sql-kafka-0-10_2.13-4.1.1.jar
-
-# Hadoop AWS + AWS SDK for MinIO (S3 compatibility)
-RUN wget -q https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.4.0/hadoop-aws-3.4.0.jar && \
-    wget -q https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.777/aws-java-sdk-bundle-1.12.777.jar
-
-# Optional: Delta Lake JARs (if not using delta-spark package only)
-RUN wget -q https://repo1.maven.org/maven2/io/delta/delta-spark_2.13/3.2.0/delta-spark_2.13-3.2.0.jar
-
+# Switch back to spark user for security
 USER spark
-WORKDIR /home/spark
 
-# Expose ports
-EXPOSE 8888 4040 8080
-
-# Default command (will be overridden in docker-compose)
-CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
+# Default command - can be overridden in docker-compose
+CMD ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]

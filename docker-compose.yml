@@ -1,4 +1,5 @@
 services:
+  # region kafka
   broker:
     image: apache/kafka:latest
     container_name: broker
@@ -25,16 +26,6 @@ services:
     networks:
       - default-net
       - kafka-network
-    # healthcheck:
-    #   test:
-    #     [
-    #       "CMD-SHELL",
-    #       "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092
-    #         --list || exit 1",
-    #     ]
-    #   interval: 5s
-    #   timeout: 10s
-    #   retries: 5
 
   kafka-init:
     image: apache/kafka:latest
@@ -52,49 +43,6 @@ services:
       - kafka-network
     restart: "no"
 
-  # kafka-connect:
-  #   image: confluentinc/cp-kafka-connect:7.6.1
-  #   container_name: kafka-connect
-
-  #   depends_on:
-  #     - broker
-
-  #   ports:
-  #     - "8083:8083"
-
-  #   environment:
-  #     CONNECT_BOOTSTRAP_SERVERS: broker:29092
-  #     CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
-  #     CONNECT_REST_PORT: 8083
-
-  #     CONNECT_GROUP_ID: connect-cluster
-
-  #     CONNECT_CONFIG_STORAGE_TOPIC: connect-configs
-  #     CONNECT_OFFSET_STORAGE_TOPIC: connect-offsets
-  #     CONNECT_STATUS_STORAGE_TOPIC: connect-status
-
-  #     CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
-  #     CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
-  #     CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
-
-  #     CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
-
-  #     CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
-  #     CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
-
-  #     CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
-
-  #   command:
-  #     - bash
-  #     - -c
-  #     - |
-  #       confluent-hub install --no-prompt confluentinc/kafka-connect-s3:10.5.13
-  #       /etc/confluent/docker/run
-
-  #   networks:
-  #     - kafka-network
-  #     - default-net
-
   kafka-ui:
     image: kafbat/kafka-ui:main
     ports:
@@ -108,42 +56,23 @@ services:
     networks:
       - kafka-network
 
+  # endregion
+  # region spark
   spark-master:
-    image: apache/spark:4.1.1
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile.spark
+    # image: apache/spark:4.1.1
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
     container_name: spark-master
+    ports:
+      - "${SPARK_MASTER_UI_PORT:-8085}:8080"
+      - "${SPARK_MASTER_PORT:-7077}:7077"
     environment:
       - SPARK_MODE=master
-      - SPARK_MASTER_HOST=spark-master
-      - HOME=/tmp
-      - SPARK_SUBMIT_OPTS=-Divy.home=/opt/spark/.ivy2
-        -Divy.cache.dir=/opt/spark/.ivy2/cache
-    ports:
-      - "8081:8081"
-      - "8085:8080"
-      - "7077:7077"
-      - "4040:4040"
-      - "8888:8888"
-    volumes:
-      - ./cache/ivy:/opt/spark/.ivy2
-      - ./stream_layer:/opt/spark/work-dir
-      - ./cache/checkpoints:/opt/spark/checkpoints
-      - ./stream_layer/spark_stream_processor.py:/opt/spark/work-dir/spark_stream_processor.py
-      - ./stream_layer/test.py:/opt/spark/work-dir/test.py
-      - ./stream_layer/spark_raw_sink.py:/opt/spark/work-dir/spark_raw_sink.py
-      - spark-data:/tmp
-    # healthcheck:
-    #   test:
-    #     [
-    #       "CMD-SHELL",
-    #       "bash -c 'echo > /dev/tcp/localhost/7077 >/dev/null 2>&1 || exit 1'",
-    #     ]
-    #   interval: 10s
-    #   timeout: 5s
-    #   retries: 10
-    #   start_period: 10s
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
     command:
       [
         "/opt/spark/bin/spark-class",
@@ -158,48 +87,63 @@ services:
     networks:
       - spark-network
       - default-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     restart: always
 
+  spark-connect:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark-connect
+    hostname: spark-connect
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    ports:
+      - "${SPARK_CONNECT_PORT:-15002}:15002"
+      - "${SPARK_DRIVER_UI_PORT:-4040}:4040"
+    environment:
+      - SPARK_MODE=connect
+      - SPARK_MASTER=spark://spark-master:7077
+      - SPARK_CONNECT_LISTEN_ADDRESS=0.0.0.0
+    command: >
+      /opt/spark/sbin/start-connect-server.sh 
+      --master spark://spark-master:7077 
+      --conf spark.driver.bindAddress=0.0.0.0
+    volumes:
+      - ./checkpoints:/opt/spark/checkpoints
+    restart: always
+    networks:
+      - spark-network
+      - default-net
+
   spark-worker:
-    image: apache/spark:4.1.1
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile.spark
+    # image: apache/spark:4.1.1
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
     container_name: spark-worker
     depends_on:
       - spark-master
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
-      - HOME=/tmp
-      - SPARK_SUBMIT_OPTS=-Divy.home=/opt/spark/.ivy2
-        -Divy.cache.dir=/opt/spark/.ivy2/cache
-    volumes:
-      - ./cache/ivy:/opt/spark/.ivy2
-      - ./cache/checkpoints:/opt/spark/checkpoints
-    command:
-      [
-        "/opt/spark/bin/spark-class",
-        "org.apache.spark.deploy.worker.Worker",
-        "spark://spark-master:7077",
-      ]
+      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES:-1}
+      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY:-1g}
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     networks:
       - spark-network
       - default-net
-    # healthcheck:
-    #   test:
-    #     [
-    #       "CMD-SHELL",
-    #       "bash -c 'echo > /dev/tcp/spark-master/7077 >/dev/null 2>&1 || exit
-    #         1'",
-    #     ]
-    #   interval: 10s
-    #   timeout: 5s
-    #   retries: 10
-    #   start_period: 10s
+    restart: always
+
+  # endregion
+  # region minio
 
   minio:
-    # S3-compatible object storage
     image: minio/minio:latest
     ports:
       - "9000:9000"
@@ -237,19 +181,8 @@ services:
     networks:
       - default-net
     restart: "no"
-    # healthcheck:
-    #   test:
-    #     [
-    #       "CMD-SHELL",
-    #       "mc --insecure alias set local http://minio:9000
-    #         ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin}
-    #         >/dev/null 2>&1 && mc --insecure ls local/clickstream-lake
-    #         >/dev/null 2>&1 || exit 1",
-    #     ]
-    #   interval: 15s
-    #   timeout: 10s
-    #   retries: 3
-    #   start_period: 10s
+  # endregion
+  # region airflow
 
   postgres:
     image: postgres:13
@@ -379,6 +312,7 @@ services:
       - airflow-net
       - default-net
     restart: always
+  # endregion
 
 volumes:
   minio_data:
