@@ -143,6 +143,8 @@ services:
         condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
+    networks:
+      - default-net
 
   airflow-triggerer:
     <<: *airflow-common
@@ -464,6 +466,7 @@ services:
 
   minio:
     image: minio/minio:latest
+    hostname: minio
     ports:
       - "9000:9000"
       - "9001:9001"
