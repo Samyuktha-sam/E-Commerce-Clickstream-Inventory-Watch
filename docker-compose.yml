@@ -121,6 +121,7 @@ services:
       - SPARK_SUBMIT_OPTS=-Divy.home=/opt/spark/.ivy2
         -Divy.cache.dir=/opt/spark/.ivy2/cache
     ports:
+      - "8081:8081"
       - "8085:8080"
       - "7077:7077"
       - "4040:4040"
@@ -153,7 +154,6 @@ services:
         "7077",
         "--webui-port",
         "8080",
-        
       ]
     networks:
       - spark-network
@@ -283,7 +283,8 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: "04VgFYBDheYCEGguaknpjvmRVCzrSk2fN7hbrYEEkgc="
-      _PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-apache-spark"
+      AIRFLOW__CORE__AUTH_MANAGER: "airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager"
+      # _PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-apache-spark"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
@@ -313,12 +314,41 @@ services:
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW_UID: "50000"
+      AIRFLOW__CORE__AUTH_MANAGER: "airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager"
+      AIRFLOW__LOGGING__LOGGING_LEVEL: "INFO"
       # _PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-apache-spark"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
-    command: webserver
+    command: api-server
+    networks:
+      - airflow-net
+      - default-net
+    restart: always
+
+  airflow-dag-processor:
+    # image: apache/airflow:2.8.3
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: dag-processor
+    depends_on:
+      - airflow-init
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: "04VgFYBDheYCEGguaknpjvmRVCzrSk2fN7hbrYEEkgc="
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__AUTH_MANAGER: "airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager"
+      AIRFLOW__LOGGING__LOGGING_LEVEL: "INFO"
+      AIRFLOW_UID: "50000"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    command: dag-processor
     networks:
       - airflow-net
       - default-net
@@ -338,6 +368,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: "04VgFYBDheYCEGguaknpjvmRVCzrSk2fN7hbrYEEkgc="
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__AUTH_MANAGER: "airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager"
       AIRFLOW_UID: "50000"
     volumes:
       - ./airflow/dags:/opt/airflow/dags

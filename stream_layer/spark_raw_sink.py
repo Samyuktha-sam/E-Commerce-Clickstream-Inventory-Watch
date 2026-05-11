@@ -77,6 +77,7 @@ def main() -> None:
             .option("kafka.bootstrap.servers", config.kafka_bootstrap)
             .option("subscribe", config.kafka_topic)
             .option("startingOffsets", "latest")
+            .option("failOnDataLoss", "false")
             .load()
         )
 

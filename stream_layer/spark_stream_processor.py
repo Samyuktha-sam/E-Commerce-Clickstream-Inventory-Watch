@@ -91,9 +91,9 @@ def detect_flash_sales(df: DataFrame) -> DataFrame:
         F.count(F.when(F.col("event_type") == "view", 1)).alias("view_count"),
     )
 
-    # Lower thresholds for testing: view_count >= 2 AND purchase_count < 1
+    # Lower thresholds for testing: view_count >= 3 AND purchase_count < 1
     return windowed_stats.filter(
-        (F.col("view_count") >= 2) & (F.col("purchase_count") < 1)
+        (F.col("view_count") >= 5) & (F.col("purchase_count") < 3)
     ).select(
         "window.start",
         "window.end",
@@ -130,7 +130,7 @@ def main() -> None:
             alerts_df.writeStream.outputMode("append")
             .format("console")
             .option("truncate", "false")
-            .trigger(processingTime="30 seconds")
+            .trigger(processingTime="3 seconds")
             .start()
         )
         logger.info(f"✓ Console sink started for debugging")
@@ -143,7 +143,7 @@ def main() -> None:
             .option("kafka.bootstrap.servers", config.kafka_bootstrap)
             .option("topic", config.alerts_topic)
             .option("checkpointLocation", f"{config.spark_checkpoint}/checkpoints")
-            .trigger(processingTime="30 seconds")
+            .trigger(processingTime="3 seconds")
             .start()
         )
         logger.info(
