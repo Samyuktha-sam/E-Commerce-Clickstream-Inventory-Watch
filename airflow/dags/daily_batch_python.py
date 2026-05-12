@@ -20,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # MinIO S3 Configuration
-S3_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio:9000")
+S3_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio-1:9000")
 S3_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 S3_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 S3_BUCKET = os.getenv("MINIO_BUCKET", "clickstream-lake")

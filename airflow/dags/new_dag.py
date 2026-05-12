@@ -19,7 +19,7 @@ DEFAULT_ARGS = {
     default_args=DEFAULT_ARGS,
     description="Daily batch processing with pure Python using Airflow SDK",
     schedule="0 2 * * *",  # 2 AM daily
-    start_date=datetime(2026, 5, 10),
+    start_date=datetime(2026, 5, 11),
     catchup=False,
     tags=["batch", "python", "s3"],
 )
