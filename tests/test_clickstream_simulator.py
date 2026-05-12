@@ -18,6 +18,11 @@ class TestClickstreamSimulatorInitialization:
         assert simulator.event_weights == ClickstreamSimulator.DEFAULT_EVENT_WEIGHTS
         assert simulator.user_id_min == 1000
         assert simulator.user_id_max == 1100
+        assert simulator.categories == ClickstreamSimulator.DEFAULT_CATEGORIES
+        assert simulator.scenario == "normal"
+        assert simulator.product_category_map == (
+            ClickstreamSimulator.DEFAULT_PRODUCT_CATEGORY_MAP
+        )
 
     def test_custom_products(self):
         """Test simulator with custom products."""
@@ -48,18 +53,55 @@ class TestClickstreamSimulatorInitialization:
         assert simulator.user_id_min == 5000
         assert simulator.user_id_max == 5500
 
+    def test_custom_categories(self):
+        """Test simulator with custom categories."""
+        custom_categories = ["Tech", "Fashion", "Books"]
+        simulator = ClickstreamSimulator(categories=custom_categories)
+
+        assert simulator.categories == custom_categories
+        assert simulator.product_category_map == {}
+
+    def test_custom_product_category_map(self):
+        """Test simulator with custom product-category mapping."""
+        custom_products = ["X1", "X2", "Y1"]
+        custom_categories = ["CatX", "CatY"]
+        custom_map = {"X1": "CatX", "X2": "CatX", "Y1": "CatY"}
+
+        simulator = ClickstreamSimulator(
+            products=custom_products,
+            categories=custom_categories,
+            product_category_map=custom_map,
+        )
+
+        assert simulator.product_category_map == custom_map
+
+    def test_scenario_normal(self):
+        """Test simulator with normal scenario."""
+        simulator = ClickstreamSimulator(scenario="normal")
+        assert simulator.scenario == "normal"
+        assert simulator.event_weights == [70, 25, 5]
+
+    def test_scenario_peak_hour(self):
+        """Test simulator with peak_hour scenario."""
+        simulator = ClickstreamSimulator(scenario="peak_hour")
+        assert simulator.scenario == "peak_hour"
+        assert simulator.event_weights == [60, 30, 10]
+
     def test_all_custom_parameters(self):
         """Test simulator with all custom parameters."""
         custom_products = ["P_CUSTOM"]
         custom_events = ["custom_event"]
         custom_weights = [100]
         custom_range = (10000, 10100)
+        custom_categories = ["CustomCategory"]
 
         simulator = ClickstreamSimulator(
             products=custom_products,
             events=custom_events,
             event_weights=custom_weights,
             user_id_range=custom_range,
+            categories=custom_categories,
+            scenario="normal",
         )
 
         assert simulator.products == custom_products
@@ -67,6 +109,8 @@ class TestClickstreamSimulatorInitialization:
         assert simulator.event_weights == custom_weights
         assert simulator.user_id_min == 10000
         assert simulator.user_id_max == 10100
+        assert simulator.categories == custom_categories
+        assert simulator.scenario == "normal"
 
 
 class TestClickstreamSimulatorEventGeneration:
@@ -82,8 +126,9 @@ class TestClickstreamSimulatorEventGeneration:
         assert "user_id" in event
         assert "product_id" in event
         assert "event_type" in event
+        assert "category" in event
         assert "timestamp" in event
-        assert len(event) == 5
+        assert len(event) == 6
 
     def test_generate_event_user_id_in_range(self):
         """Test that user_id is within specified range."""
@@ -110,6 +155,15 @@ class TestClickstreamSimulatorEventGeneration:
             event = simulator.generate_event()
             assert event["product_id"] in simulator.products
 
+    def test_generate_event_category_matches_product(self):
+        """Test that category matches product mapping for defaults."""
+        simulator = ClickstreamSimulator()
+
+        for _ in range(50):
+            event = simulator.generate_event()
+            mapped_category = simulator.product_category_map.get(event["product_id"])
+            assert event["category"] == mapped_category
+
     def test_generate_event_custom_products(self):
         """Test event generation with custom products."""
         custom_products = ["CUSTOM_P1", "CUSTOM_P2"]
@@ -118,6 +172,23 @@ class TestClickstreamSimulatorEventGeneration:
         for _ in range(50):
             event = simulator.generate_event()
             assert event["product_id"] in custom_products
+
+    def test_generate_event_category_valid(self):
+        """Test that category is from available categories."""
+        simulator = ClickstreamSimulator()
+
+        for _ in range(50):
+            event = simulator.generate_event()
+            assert event["category"] in simulator.categories
+
+    def test_generate_event_custom_categories(self):
+        """Test event generation with custom categories."""
+        custom_categories = ["CustomCat1", "CustomCat2"]
+        simulator = ClickstreamSimulator(categories=custom_categories)
+
+        for _ in range(50):
+            event = simulator.generate_event()
+            assert event["category"] in custom_categories
 
     def test_generate_event_type_valid(self):
         """Test that event_type is from available events."""
@@ -215,9 +286,14 @@ class TestClickstreamSimulatorBatchGeneration:
             assert "user_id" in event
             assert "product_id" in event
             assert "event_type" in event
+            assert "category" in event
             assert "timestamp" in event
             assert event["product_id"] in simulator.products
             assert event["event_type"] in simulator.events
+            assert event["category"] in simulator.categories
+            assert event["category"] == simulator.product_category_map.get(
+                event["product_id"]
+            )
 
     def test_generate_batch_independence(self):
         """Test that batch events are independent."""
@@ -235,9 +311,13 @@ class TestClickstreamSimulatorBatchGeneration:
         custom_products = ["PROD_X", "PROD_Y"]
         custom_events = ["event_x"]
         custom_weights = [100]
+        custom_categories = ["CatX", "CatY"]
 
         simulator = ClickstreamSimulator(
-            products=custom_products, events=custom_events, event_weights=custom_weights
+            products=custom_products,
+            events=custom_events,
+            event_weights=custom_weights,
+            categories=custom_categories,
         )
 
         batch = simulator.generate_batch(5)
@@ -245,6 +325,26 @@ class TestClickstreamSimulatorBatchGeneration:
         for event in batch:
             assert event["product_id"] in custom_products
             assert event["event_type"] == "event_x"
+            assert event["category"] in custom_categories
+
+    def test_generate_batch_with_time_range(self):
+        """Test batch generation with time range."""
+        from datetime import datetime, timedelta
+
+        simulator = ClickstreamSimulator()
+        start_time = datetime(2026, 5, 12, 10, 0, 0)
+        end_time = datetime(2026, 5, 12, 11, 0, 0)
+
+        batch = simulator.generate_batch(5, time_range=(start_time, end_time))
+
+        assert len(batch) == 5
+        for event in batch:
+            event_time = datetime.fromisoformat(event["timestamp"])
+            assert start_time <= event_time <= end_time
+
+        # Check timestamps are sorted
+        timestamps = [datetime.fromisoformat(e["timestamp"]) for e in batch]
+        assert timestamps == sorted(timestamps)
 
 
 class TestClickstreamSimulatorEventDistribution:
@@ -330,3 +430,88 @@ class TestClickstreamSimulatorEdgeCases:
         for _ in range(10):
             event = simulator.generate_event()
             assert event["event_type"] in special_events
+
+
+class TestClickstreamSimulatorScenarios:
+    """Tests for scenario-based event generation."""
+
+    def test_scenario_peak_hour_weights(self):
+        """Test that peak_hour scenario has higher purchase rates."""
+        simulator = ClickstreamSimulator(scenario="peak_hour")
+        events = [simulator.generate_event() for _ in range(1000)]
+
+        purchase_count = sum(1 for e in events if e["event_type"] == "purchase")
+        assert purchase_count > 80  # Should be around 100 with 10% weight
+
+    def test_scenario_browsing_weights(self):
+        """Test that browsing scenario has mostly views."""
+        simulator = ClickstreamSimulator(scenario="browsing")
+        events = [simulator.generate_event() for _ in range(1000)]
+
+        view_count = sum(1 for e in events if e["event_type"] == "view")
+        assert view_count > 800  # Should be around 850 with 85% weight
+
+
+class TestClickstreamSimulatorUserSessions:
+    """Tests for user session generation."""
+
+    def test_generate_user_session_structure(self):
+        """Test that user session generates valid events."""
+        simulator = ClickstreamSimulator()
+        session = simulator.generate_user_session(session_length=3)
+
+        assert len(session) == 3
+        user_id = session[0]["user_id"]
+        for event in session:
+            assert event["user_id"] == user_id
+            assert "event_id" in event
+            assert "product_id" in event
+            assert "event_type" in event
+            assert "category" in event
+            assert "timestamp" in event
+
+    def test_generate_user_session_chronological(self):
+        """Test that session events are in chronological order."""
+        from datetime import datetime
+
+        simulator = ClickstreamSimulator()
+        start_time = datetime(2026, 5, 12, 10, 0, 0)
+        session = simulator.generate_user_session(
+            start_time=start_time, session_length=5
+        )
+
+        timestamps = [datetime.fromisoformat(e["timestamp"]) for e in session]
+        assert timestamps == sorted(timestamps)
+        assert all(ts >= start_time for ts in timestamps)
+
+
+class TestClickstreamSimulatorMixedScenarios:
+    """Tests for mixed scenario generation."""
+
+    def test_generate_mixed_scenarios_total_count(self):
+        """Test that mixed scenarios generate correct total events."""
+        simulator = ClickstreamSimulator()
+        events = simulator.generate_mixed_scenarios(100)
+
+        assert len(events) == 100
+
+    def test_generate_mixed_scenarios_time_range(self):
+        """Test mixed scenarios with time range."""
+        from datetime import datetime
+
+        simulator = ClickstreamSimulator()
+        start_time = datetime(2026, 5, 12, 9, 0, 0)
+        end_time = datetime(2026, 5, 12, 17, 0, 0)
+
+        events = simulator.generate_mixed_scenarios(
+            50, time_range=(start_time, end_time)
+        )
+
+        assert len(events) == 50
+        for event in events:
+            event_time = datetime.fromisoformat(event["timestamp"])
+            assert start_time <= event_time <= end_time
+
+        # Check chronological order
+        timestamps = [datetime.fromisoformat(e["timestamp"]) for e in events]
+        assert timestamps == sorted(timestamps)

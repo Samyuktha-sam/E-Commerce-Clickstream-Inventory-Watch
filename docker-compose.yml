@@ -239,6 +239,9 @@ services:
       /bin/bash -c '
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server $${KAFKA_BOOTSTRAP_SERVERS} --create --if-not-exists --topic clickstream-events --partitions 1 --replication-factor 1;
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server $${KAFKA_BOOTSTRAP_SERVERS} --create --if-not-exists --topic alerts-notifications --partitions 1 --replication-factor 1;
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server $${KAFKA_BOOTSTRAP_SERVERS} --create --if-not-exists --topic top-product-analytics-reports --partitions 1 --replication-factor 1;
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server $${KAFKA_BOOTSTRAP_SERVERS} --create --if-not-exists --topic user-segmentation-reports --partitions 1 --replication-factor 1;
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server $${KAFKA_BOOTSTRAP_SERVERS} --create --if-not-exists --topic analytics-reports --partitions 1 --replication-factor 1;
       '
     networks:
       - default-net

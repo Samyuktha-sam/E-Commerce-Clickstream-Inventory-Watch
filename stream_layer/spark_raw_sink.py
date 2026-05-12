@@ -35,6 +35,7 @@ class AppConfig:
             StructField("user_id", StringType(), True),
             StructField("product_id", StringType(), True),
             StructField("event_type", StringType(), True),
+            StructField("category", StringType(), True),
             StructField("timestamp", StringType(), True),
         ]
     )
