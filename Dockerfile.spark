@@ -49,8 +49,8 @@ RUN apt-get update && apt-get install -y \
 COPY --from=deps /opt/spark/deps-kafka/* /opt/spark/jars/
 
 # Create directories for checkpoints, extra logs, and Ivy cache
-RUN mkdir -p /opt/spark/checkpoints /opt/spark/logs /opt/spark/.ivy2/cache && \
-    chmod -R 777 /opt/spark/checkpoints /opt/spark/logs /opt/spark/.ivy2
+RUN mkdir -p /opt/spark/checkpoints /opt/spark/logs /opt/spark/.ivy2/cache /opt/spark/events /opt/spark/spark-warehouse && \
+    chmod -R 777 /opt/spark/checkpoints /opt/spark/logs /opt/spark/.ivy2 /opt/spark/events /opt/spark/spark-warehouse
 
 WORKDIR /opt/spark
 

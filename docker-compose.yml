@@ -15,6 +15,8 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-apiserver:8080/execution/"
+    AIRFLOW_CONN_SPARK_DEFAULT: "spark://spark-master:7077"
+    AIRFLOW_CONN_SPARK_CONNECT_DEFAULT: "sc://spark-master:15002"
     # yamllint disable rule:line-length
     # Use simple http server on scheduler for health checks
     # See https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/check-health.html#scheduler-health-check-server
@@ -267,6 +269,9 @@ services:
     ports:
       - "${SPARK_MASTER_UI_PORT:-8085}:8080"
       - "${SPARK_MASTER_PORT:-7077}:7077"
+      - "${SPARK_CONNECT_PORT:-15002}:15002"
+      - "${SPARK_HISTORY_UI_PORT:-18080}:18080"
+      - "${SPARK_DRIVER_UI_PORT:-4040}:4040"
     environment:
       - SPARK_MODE=master
       - SPARK_RPC_AUTHENTICATION_ENABLED=no
@@ -279,17 +284,30 @@ services:
       - ./cache/ivy:/opt/spark/.ivy2
       - ./cache/checkpoints:/opt/spark/checkpoints
       - ./stream_layer/:/opt/spark/work-dir/
-    command:
-      [
-        "/opt/spark/bin/spark-class",
-        "org.apache.spark.deploy.master.Master",
-        "-h",
-        "spark-master",
-        "--port",
-        "7077",
-        "--webui-port",
-        "8080",
-      ]
+      - ./config/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+    command: |
+      bash -c '
+      echo "Starting Spark Master..." &&
+        /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master \
+          --host spark-master --port 7077 --webui-port 8080 &
+        
+        sleep 10 &&
+        
+        echo "Starting Spark Connect Server..." &&
+        /opt/spark/sbin/start-connect-server.sh \
+          --master spark://spark-master:7077 \
+          --conf spark.driver.bindAddress=0.0.0.0 \
+          --conf spark.cores.max=4 \
+          --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,org.apache.hadoop:hadoop-aws:3.4.2 \
+          --conf spark.eventLog.enabled=true &
+        
+        sleep 8 &&
+        
+        echo "Starting Spark History Server on port 18080..." &&
+        /opt/spark/bin/spark-class org.apache.spark.deploy.history.HistoryServer
+        
+        wait
+      '
     networks:
       - default-net
     healthcheck:
@@ -343,13 +361,12 @@ services:
   spark-worker:
     image: spark-custom
     pull_policy: never
-    container_name: spark-worker
     depends_on:
       - spark-master
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES:-8}
+      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES:-10}
       - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY:-8g}
       - SPARK_SUBMIT_OPTS=-Divy.home=/opt/spark/.ivy2
       - Divy.cache.dir=/opt/spark/.ivy2/cache
@@ -480,6 +497,7 @@ volumes:
   minio_data:
   kafka_data:
   postgres-db-volume:
+  spark-events:
 
 networks:
   default-net:
