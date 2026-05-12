@@ -116,3 +116,4 @@ spark-warehouse/
 .AppleDouble
 .LSOverride
 *.sublime-workspace
+.ruff_cache/

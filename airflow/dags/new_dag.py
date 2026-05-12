@@ -1,7 +1,5 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from airflow.sdk import dag, task
-from airflow.models import Connection
-from minio import Minio
 
 default_args = {
     "owner": "data_eng",
@@ -19,7 +17,10 @@ default_args = {
     tags=["spark", "raw_events"],
 )
 def spark_submit_dag():
-    @task.pyspark(conn_id="spark_default", config_kwargs={"spark.remote": "sc://spark-master:15002"} )
+    @task.pyspark(
+        conn_id="spark_default",
+        config_kwargs={"spark.remote": "sc://spark-master:15002"},
+    )
     def verify_spark(spark=None):
         # If this code runs, the connection is successful
         print("Successfully connected to Spark!")
@@ -47,5 +48,6 @@ def spark_submit_dag():
         return "Connection Verified"
 
     verify_spark()
+
 
 spark_submit_dag_instance = spark_submit_dag()

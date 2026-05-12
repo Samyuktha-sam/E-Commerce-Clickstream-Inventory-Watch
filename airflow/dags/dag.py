@@ -1,6 +1,5 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from airflow.sdk import dag, task
-from airflow.models import Connection
 from minio import Minio
 
 # Default settings for the DAG
@@ -15,12 +14,11 @@ default_args = {
     dag_id="minio_native_metadata_checker",
     default_args=default_args,
     start_date=datetime(2026, 5, 11),
-    schedule="@daily", # <--- CHANGED THIS LINE
+    schedule="@daily",  # <--- CHANGED THIS LINE
     catchup=False,
     tags=["minio_sdk", "raw_events"],
 )
 def minio_sdk_dag():
-
     @task
     def get_partition_metadata(ds=None):
         """

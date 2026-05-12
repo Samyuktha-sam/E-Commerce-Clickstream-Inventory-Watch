@@ -1,8 +1,6 @@
 import subprocess
 import time
 import sys
-import os
-import signal
 from pathlib import Path
 
 # Get the project root directory
@@ -12,9 +10,9 @@ PROJECT_ROOT = Path(__file__).parent
 def run_command(cmd, shell=False, check=True, description=""):
     """Run a shell command and handle errors."""
     if description:
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"▶ {description}")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
         print(f"Command: {cmd if isinstance(cmd, str) else ' '.join(cmd)}")
 
     try:
@@ -98,7 +96,7 @@ def main():
         print("The producer will run continuously in the background...")
 
         producer_process = subprocess.Popen(
-            f"uv run producers/clickstream_producer.py",
+            "uv run producers/clickstream_producer.py",
             shell=True,
             cwd=PROJECT_ROOT,
             stdout=subprocess.PIPE,
@@ -175,7 +173,7 @@ def main():
         print("The producer will run continuously in the background...")
 
         producer_process = subprocess.Popen(
-            f"uv run producers/clickstream_producer.py",
+            "uv run producers/clickstream_producer.py",
             shell=True,
             cwd=PROJECT_ROOT,
             stdout=subprocess.PIPE,

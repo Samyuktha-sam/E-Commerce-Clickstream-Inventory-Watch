@@ -8,8 +8,7 @@ REPORT_PATH = f"{S3_BUCKET}/clickstream/reports/daily_batch_report/"
 
 def create_spark_session():
     return (
-        SparkSession.builder
-        .appName("DailyClickstreamBatchProcessingFromS3")
+        SparkSession.builder.appName("DailyClickstreamBatchProcessingFromS3")
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .getOrCreate()
     )
@@ -34,15 +33,12 @@ def main():
         count(when(col("event_type") == "purchase", True)).alias("purchases"),
     )
 
-    user_segments = (
-        user_summary.withColumn(
-            "segment",
-            when(col("purchases") > 0, "Buyer")
-            .when((col("views") >= 5) & (col("purchases") == 0), "Window Shopper")
-            .otherwise("Casual Visitor"),
-        )
-        .withColumn("report_date", current_date())
-    )
+    user_segments = user_summary.withColumn(
+        "segment",
+        when(col("purchases") > 0, "Buyer")
+        .when((col("views") >= 5) & (col("purchases") == 0), "Window Shopper")
+        .otherwise("Casual Visitor"),
+    ).withColumn("report_date", current_date())
 
     top_products.write.mode("overwrite").json(f"{REPORT_PATH}/top_products")
     user_segments.write.mode("overwrite").json(f"{REPORT_PATH}/user_segments")

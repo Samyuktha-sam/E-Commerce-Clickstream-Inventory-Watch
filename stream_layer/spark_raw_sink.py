@@ -1,10 +1,13 @@
 import logging
 import os
+import sys
 from dataclasses import dataclass
-from pyspark.sql import DataFrame, SparkSession
+
+from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
 from pyspark.sql.types import StringType, StructField, StructType
 
+# Setup Logger
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -21,8 +24,11 @@ class AppConfig:
     minio_access_key: str = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
     minio_secret_key: str = os.getenv("MINIO_SECRET_KEY", "minioadmin")
     lake_root: str = os.getenv("MINIO_LAKE_PATH", "s3a://clickstream-lake")
-    spark_master: str = os.getenv("SPARK_MASTER", "spark://spark-master:7077")
 
+    # Spark Connect URL
+    spark_connect_url: str = os.getenv("SPARK_CONNECT_URL", "sc://localhost:15002")
+
+    # Using StringType for timestamp initially to ensure stable parsing in Spark Connect
     CLICKSTREAM_SCHEMA: StructType = StructType(
         [
             StructField("event_id", StringType(), True),
@@ -34,42 +40,23 @@ class AppConfig:
     )
 
 
-def get_spark_session(config: AppConfig) -> SparkSession:
-    return (
+def main() -> None:
+    config = AppConfig()
+
+    spark = (
         SparkSession.builder.appName("StorageLayer-RawEventArchiver")
-        .master(config.spark_master)
-        .config(
-            "spark.jars.packages",
-            "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,org.apache.hadoop:hadoop-aws:3.4.2",
-        )
+        .remote(config.spark_connect_url)
         .config("spark.hadoop.fs.s3a.endpoint", config.minio_endpoint)
         .config("spark.hadoop.fs.s3a.access.key", config.minio_access_key)
         .config("spark.hadoop.fs.s3a.secret.key", config.minio_secret_key)
         .config("spark.hadoop.fs.s3a.path.style.access", "true")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
-        .config(
-            "spark.sql.shuffle.partitions", "2"
-        )  # Low shuffle needed for direct write
-        .config("spark.streaming.stopGracefullyOnShutdown", "true")
+        .config("spark.sql.shuffle.partitions", "2")
         .getOrCreate()
     )
 
-
-def transform_for_lake(raw_df: DataFrame, schema: StructType) -> DataFrame:
-    return (
-        raw_df.select(F.from_json(F.col("value").cast("string"), schema).alias("data"))
-        .select("data.*")
-        .withColumn("event_time", F.col("timestamp").cast("timestamp"))
-        .withColumn("event_date", F.to_date("event_time"))
-        .filter(F.col("event_time").isNotNull())
-    )
-
-
-def main() -> None:
-    config = AppConfig()
-    spark = get_spark_session(config)
-    spark.sparkContext.setLogLevel("WARN")
+    query = None
 
     try:
         raw_stream = (
@@ -81,43 +68,50 @@ def main() -> None:
             .load()
         )
 
-        archival_df = transform_for_lake(raw_stream, config.CLICKSTREAM_SCHEMA)
+        archival_df = (
+            raw_stream.select(
+                F.from_json(
+                    F.col("value").cast("string"), config.CLICKSTREAM_SCHEMA
+                ).alias("data")
+            )
+            .select("data.*")
+            .withColumn("event_time", F.to_timestamp(F.col("timestamp")))
+            .withColumn("event_date", F.to_date("event_time"))
+            .filter(F.col("event_time").isNotNull())
+        )
 
-        # # Console output for debugging
-        # console_query = (
-        #     archival_df.writeStream.format("console")
-        #     .option("truncate", "false")
-        #     .outputMode("append")
-        #     .start()
-        # )
+        logger.info("Raw Event Archiver starting. Writing to: %s", config.lake_root)
 
-        # Sink: Parquet Data Lake on S3/MinIO
-        # Partitioning by date is critical for query performance later
         query = (
             archival_df.writeStream.format("parquet")
-            .option("path", f"{config.lake_root}/raw-events")
+            .queryName("RawEventArchiver")
+            .option("path", "%s/raw-events" % config.lake_root)
             .option(
                 "checkpointLocation",
-                f"{config.lake_root}/_checkpoints/raw-events-archiver",
+                "%s/_checkpoints/raw-events-archiver" % config.lake_root,
             )
             .outputMode("append")
             .partitionBy("event_date")
-            .trigger(
-                processingTime="120 seconds"
-            )  # Increased from 60s to prevent batch lag
+            .trigger(processingTime="120 seconds")
             .start()
         )
 
-        logger.info("Raw Event Archiver started. Writing to: %s", config.lake_root)
-        logger.info(
-            "Checkpoint location: %s",
-            f"{config.lake_root}/_checkpoints/raw-events-archiver",
-        )
         query.awaitTermination()
+
+    except KeyboardInterrupt:
+        logger.info("Keyboard Interrupt detected. Initiating graceful shutdown...")
     except Exception as e:
-        logger.error("Archiver job failed: %s", str(e))
+        logger.error("Archiver job failed: %s", e)
     finally:
+        if query and query.isActive:
+            logger.info("Stopping streaming query: %s", query.id)
+            query.stop()
+
+        logger.info("Stopping Spark Session...")
         spark.stop()
+
+        logger.info("Storage Layer shutdown complete.")
+        sys.exit(0)
 
 
 if __name__ == "__main__":

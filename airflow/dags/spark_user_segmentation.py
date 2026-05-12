@@ -74,14 +74,15 @@ def main(date_str):
     local_reports_dir = "/opt/airflow/reports"
     os.makedirs(local_reports_dir, exist_ok=True)
 
-    spark = SparkSession.builder \
-        .appName(f"DailyUserSegmentation_{date_str}") \
-        .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000") \
-        .config("spark.hadoop.fs.s3a.access.key", "minioadmin") \
-        .config("spark.hadoop.fs.s3a.secret.key", "minioadmin") \
-        .config("spark.hadoop.fs.s3a.path.style.access", "true") \
-        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+    spark = (
+        SparkSession.builder.appName(f"DailyUserSegmentation_{date_str}")
+        .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000")
+        .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
+        .config("spark.hadoop.fs.s3a.secret.key", "minioadmin")
+        .config("spark.hadoop.fs.s3a.path.style.access", "true")
+        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .getOrCreate()
+    )
 
     try:
         # Read raw data
@@ -89,12 +90,16 @@ def main(date_str):
         df = spark.read.parquet(input_path)
 
         # ====================== User Segmentation ======================
-        user_stats = df.groupBy("user_id").agg(
-            count(when(col("event_type") == "view", 1)).alias("views"),
-            count(when(col("event_type") == "purchase", 1)).alias("purchases")
-        ).withColumn(
-            "segment",
-            when(col("purchases") > 0, "Buyer").otherwise("Window Shopper")
+        user_stats = (
+            df.groupBy("user_id")
+            .agg(
+                count(when(col("event_type") == "view", 1)).alias("views"),
+                count(when(col("event_type") == "purchase", 1)).alias("purchases"),
+            )
+            .withColumn(
+                "segment",
+                when(col("purchases") > 0, "Buyer").otherwise("Window Shopper"),
+            )
         )
 
         user_stats.write.mode("overwrite").parquet(
@@ -102,33 +107,39 @@ def main(date_str):
         )
 
         # ====================== Top 5 Products ======================
-        top_products = df.filter(col("event_type") == "view") \
-            .groupBy("product_id") \
-            .count() \
-            .withColumnRenamed("count", "views") \
-            .orderBy(col("views").desc()) \
+        top_products = (
+            df.filter(col("event_type") == "view")
+            .groupBy("product_id")
+            .count()
+            .withColumnRenamed("count", "views")
+            .orderBy(col("views").desc())
             .limit(5)
+        )
 
         # ====================== Category Conversion Rates ======================
-        category_stats = df.groupBy("category").agg(
-            count(when(col("event_type") == "view", 1)).alias("views"),
-            count(when(col("event_type") == "purchase", 1)).alias("purchases")
-        ).withColumn(
-            "conversion_rate",
-            when(col("views") > 0,
-                 (col("purchases") / col("views")).cast("float")
-            ).otherwise(0.0)
-        ).orderBy(col("conversion_rate").desc())
+        category_stats = (
+            df.groupBy("category")
+            .agg(
+                count(when(col("event_type") == "view", 1)).alias("views"),
+                count(when(col("event_type") == "purchase", 1)).alias("purchases"),
+            )
+            .withColumn(
+                "conversion_rate",
+                when(
+                    col("views") > 0, (col("purchases") / col("views")).cast("float")
+                ).otherwise(0.0),
+            )
+            .orderBy(col("conversion_rate").desc())
+        )
 
         # ====================== Save to MinIO (Partitioned) ======================
         top_products.coalesce(1).write.mode("overwrite").csv(
-            f"s3a://clickstream-lake/reports/top_products/date={date_str}/",
-            header=True
+            f"s3a://clickstream-lake/reports/top_products/date={date_str}/", header=True
         )
 
         category_stats.coalesce(1).write.mode("overwrite").csv(
             f"s3a://clickstream-lake/reports/category_conversion/date={date_str}/",
-            header=True
+            header=True,
         )
 
         # ====================== Save Local Copies for Airflow ======================

@@ -2,7 +2,6 @@
 Unit tests for the ClickstreamSimulator class.
 """
 
-import pytest
 from datetime import datetime
 from producers.clickstream_simulator import ClickstreamSimulator
 
