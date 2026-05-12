@@ -6,6 +6,7 @@ x-airflow-common: &airflow-common
   build:
     context: .
     dockerfile: Dockerfile.airflow
+  image: airflow-custom
   environment: &airflow-common-env
     AIRFLOW__API_AUTH__JWT_SECRET: 4z4FmNHYuX0J0gr3NHVvhw==
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -36,7 +37,8 @@ x-airflow-common: &airflow-common
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
+    container_name: airflow-postgres
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
@@ -219,7 +221,6 @@ services:
       - kafka_data:/var/lib/kafka/data
     networks:
       - default-net
-      - kafka-network
 
   kafka-init:
     image: apache/kafka:latest
@@ -234,7 +235,7 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server $${KAFKA_BOOTSTRAP_SERVERS} --create --if-not-exists --topic alerts-notifications --partitions 1 --replication-factor 1;
       '
     networks:
-      - kafka-network
+      - default-net
     restart: "no"
 
   kafka-ui:
@@ -248,7 +249,7 @@ services:
     depends_on:
       - broker
     networks:
-      - kafka-network
+      - default-net
 
   # endregion
   # region spark
@@ -257,6 +258,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.spark
+    image: spark-custom
     container_name: spark-master
     ports:
       - "${SPARK_MASTER_UI_PORT:-8085}:8080"
@@ -285,7 +287,6 @@ services:
         "8080",
       ]
     networks:
-      - spark-network
       - default-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080"]
@@ -336,10 +337,8 @@ services:
   #     retries: 3
 
   spark-worker:
-    # image: apache/spark:4.1.1
-    build:
-      context: .
-      dockerfile: Dockerfile.spark
+    image: spark-custom
+    pull_policy: never
     container_name: spark-worker
     depends_on:
       - spark-master
@@ -360,7 +359,6 @@ services:
         "spark://spark-master:7077",
       ]
     networks:
-      - spark-network
       - default-net
     restart: always
 
@@ -480,9 +478,5 @@ volumes:
   postgres-db-volume:
 
 networks:
-  spark-network:
-    driver: bridge
   default-net:
-    driver: bridge
-  kafka-network:
     driver: bridge
